@@ -93,7 +93,21 @@ export function DocsTab() {
             Mỗi người phải đạt <b>đúng định mức tháng</b> (Sollstunden) — không thừa, không thiếu.
           </li>
           <li>
-            Giờ nghỉ <b>cộng thêm</b> vào giờ có mặt, <b>không trừ</b> vào giờ công (bảng ở mục 3).
+            <b>Không có giờ nghỉ</b> — theo yêu cầu của chị Cúc. Giờ có mặt bằng đúng giờ công.
+          </li>
+          <li>
+            Mỗi ca phải nằm <b>gọn trong một khung mở cửa</b>. T3–T6 quán mở hai khung
+            (11:30–15:00 và 17:00–22:00) nên ca <b>không được vắt qua</b> lúc nghỉ trưa —
+            khung dài nhất trong ngày chỉ 5 giờ.
+          </li>
+          <li>
+            <b>Chủ quán</b> (ô tick trong tab Nhân viên) làm <b>5 ngày mỗi tuần</b> và{" "}
+            <b>không làm thứ 7</b>. Giờ của chủ tính vào giờ quán như mọi người, kể cả khi
+            đếm số người trong giờ cao điểm.
+          </li>
+          <li>
+            <b>Không giới hạn</b> số nhân viên, cũng không có trần giờ riêng cho Minijob.
+            Các tiệm khác có vì chủ nói rõ; ở đây chỉ nêu đội hình hiện tại.
           </li>
         </ul>
       </Section>
@@ -111,8 +125,10 @@ export function DocsTab() {
         <p className="text-slate-600">
           Công thức mỗi ngày: <code>giờ ngày = tổng giờ tháng × trọng số ngày ÷ tổng trọng số</code>.
           <br />
-          <b>Cuối tuần</b> là những ngày đông nhất; <b>Thứ 2 đóng cửa</b>.
-          Ngày <b>đóng cửa</b> có trọng số 0 (không xếp giờ, giờ dồn sang ngày khác).
+          <b>Thứ 2 đóng cửa</b>. Trọng số nhích dần về cuối tuần, nhưng <b>cố ý để thoải</b>:
+          xếp thêm giờ vào ngày mà giờ cao điểm chỉ cho tối đa 2 người thì cũng không dùng
+          được, chỉ tổ thừa người. Ngày <b>đóng cửa</b> có trọng số 0 (không xếp giờ, giờ dồn
+          sang ngày khác).
         </p>
       </Section>
 
@@ -167,17 +183,18 @@ export function DocsTab() {
         </p>
         <p className="text-slate-600">
           Nếu ngày đó <b>không đủ giờ</b> để phủ, app <b>không</b> ép ca dài nữa — ép cũng vô ích và
-          còn ngốn hết giờ của người thứ hai. Khi đó app ưu tiên <b>có 2 người trong ngày</b> hơn là
-          một người làm ca thật dài, vì người thứ hai chính là người đỡ lúc người kia nghỉ giữa ca.
-          Những ngày còn hụt sẽ được <b>Bảng tổng quan cảnh báo</b> kèm danh sách ngày.
+          còn ngốn hết giờ của người sau. Ở đây <b>một người là đủ</b> để coi khung đó có người;
+          cái phải giữ là <b>không vượt trần</b>. Những ngày còn lệch — thiếu người hoặc thừa
+          người — đều được <b>Bảng tổng quan cảnh báo</b> kèm danh sách ngày.
         </p>
       </Section>
 
       <Section title="3) Độ dài ca và giờ nghỉ">
         <p>
-          Ca sáng bám đầu khung giờ, ca tối bám cuối khung. Nhưng ca <b>không bắt buộc</b> phải neo
-          vào hai đầu: nếu cần phủ cao điểm, app sẽ <b>đẩy ca vào giữa ngày</b> (VD 14:00–21:00).
-          Người mở cửa và người đóng cửa thì luôn có.
+          Ca sáng bám đầu khung, ca tối bám cuối khung — <b>khung ở đây là từng khối mở cửa</b>,
+          không phải cả ngày. T3–T6 nghĩa là ca sáng nằm trong 11:30–15:00, ca tối trong
+          17:00–22:00. Ca <b>không bắt buộc</b> neo vào hai đầu: nếu cần phủ cao điểm, app sẽ
+          đẩy ca vào giữa khối. Người mở cửa và người đóng cửa thì luôn có.
         </p>
         <p>
           Nếu một ngày mở <b>ngắn hơn</b> (VD nửa buổi), ca sẽ <b>tự co ngắn lại</b> cho vừa khung —
@@ -185,9 +202,9 @@ export function DocsTab() {
           đủ</b> ở các ngày khác.
         </p>
         <p>
-          Giờ nghỉ <b>không trừ vào giờ công</b> mà kéo dài thời gian có mặt. Quy tắc của tiệm:{" "}
-          <b>làm quá 4 tiếng là phải nghỉ</b> (chặt hơn luật Đức, luật chỉ bắt buộc từ 6 tiếng). Ví
-          dụ ca 9 giờ công chiếm 9 tiếng 45 phút vì có thêm 45 phút nghỉ.
+          Tiệm này <b>không có giờ nghỉ</b>, nên giờ có mặt bằng đúng giờ công: ca 9 giờ công
+          chiếm đúng 9 tiếng. Bảng dưới đọc thẳng từ mã nguồn — nếu sau này đặt lại quy tắc
+          nghỉ thì bảng tự đổi theo.
         </p>
         <div className="overflow-x-auto">
           <table className="text-sm border-collapse">
