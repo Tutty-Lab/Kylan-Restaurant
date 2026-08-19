@@ -3,7 +3,7 @@ import type { UseScheduleReturn } from "../hooks/useSchedule";
 import { calculatePause, minutesToShortHours, minutesToTime, timeToMinutes } from "../lib/time";
 import { isoLabel } from "../lib/shiftOps";
 import { WEEKDAY_LABELS_VI, weekdayKeyOf, parseIsoDate } from "../lib/demand";
-import { resolveDay } from "../lib/workHours";
+import { frameOf, resolveDay } from "../lib/workHours";
 import { publicHolidays } from "../lib/holidays";
 
 const inputClass =
@@ -29,9 +29,8 @@ export function ShiftCellEditor({
   // (inkl. Ausnahmen / Feiertag).
   const overrideMap = Object.fromEntries(schedule.dateOverrides.map((o) => [o.date, o]));
   const resolved = resolveDay(schedule.workHours, date, publicHolidays(schedule.year), overrideMap);
-  const win = resolved.closed
-    ? { startMinutes: schedule.workHours.holiday.startMinutes, endMinutes: schedule.workHours.holiday.endMinutes }
-    : resolved.window;
+  // Bei geschlossenem Tag als Vorschlag den Feiertagsrahmen nehmen.
+  const win = resolved.closed ? frameOf(schedule.workHours.holiday) : resolved.window;
   const [start, setStart] = useState(minutesToTime(shift?.startMinutes ?? win.startMinutes));
   const [end, setEnd] = useState(minutesToTime(shift?.endMinutes ?? win.endMinutes));
   const [pause, setPause] = useState(String(shift?.pauseMinutes ?? 30));

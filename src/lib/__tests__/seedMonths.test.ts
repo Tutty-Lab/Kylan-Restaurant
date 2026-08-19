@@ -13,6 +13,12 @@ import { SEED_MONTHS, totalTargetHours } from "../seedData";
 import { DEFAULT_WORK_HOURS } from "../workHours";
 import { calculatePause } from "../time";
 import { WEEKDAY_SHORT_DE } from "../demand";
+import { PEAK_WINDOWS_BY_WEEKDAY } from "../scheduler";
+import { publicHolidays } from "../holidays";
+import { weekStartOf } from "../weeks";
+import { parseIsoDate, weekdayKeyOf } from "../demand";
+import { OWNER_DAYS_PER_WEEK, OWNER_FREE_WEEKDAY } from "../../types";
+import { effectiveWeekdayKey, resolveDay } from "../workHours";
 
 const runs = SEED_MONTHS.map((seed) => {
   const shifts = generateSchedule({
@@ -63,6 +69,44 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
     }
   });
 
+  it("hält die Sonderregeln des Chefs ein: kein Samstag, fünf Tage die Woche", () => {
+    // Die Regeln standen lange nur in placeOneShift. Die Reparaturläufe danach
+    // verschieben und tauschen aber Termine – und haben den Chef dabei auf
+    // Samstage und in Sechs-Tage-Wochen gesetzt, obwohl der erste Durchgang
+    // sauber war. Deshalb wird hier das ENDERGEBNIS geprüft, nicht der Weg.
+    const chef = seed.employees.find((e) => e.isOwner);
+    if (!chef) return;
+
+    const meine = shifts.filter((s) => s.employeeId === chef.id);
+    expect(meine.filter((s) => weekdayKeyOf(parseIsoDate(s.date)) === OWNER_FREE_WEEKDAY)).toEqual([]);
+
+    const proWoche = new Map<string, number>();
+    for (const s of meine) {
+      const w = weekStartOf(s.date);
+      proWoche.set(w, (proWoche.get(w) ?? 0) + 1);
+    }
+    for (const [woche, tage] of proWoche) {
+      expect(`${woche}: ${tage}`).toBe(`${woche}: ${Math.min(tage, OWNER_DAYS_PER_WEEK)}`);
+    }
+  });
+
+  it("legt jede Schicht KOMPLETT in einen Öffnungsblock", () => {
+    // Di–Fr hat der Tag ZWEI Blöcke (11:30–15:00 und 17:00–22:00). Es reicht
+    // deshalb nicht, Anfang und Ende gegen den Tagesrahmen zu prüfen: eine
+    // 5-h-Frühschicht ab 11:30 endet um 16:30 und liegt damit anderthalb
+    // Stunden im geschlossenen Laden. Genau das ist einmal passiert – rund ein
+    // Viertel aller Dienste war betroffen, und keine der damaligen Prüfungen
+    // hat es gemerkt.
+    const holidays = publicHolidays(seed.year);
+    const draussen = shifts.filter((s) => {
+      const day = resolveDay(DEFAULT_WORK_HOURS, s.date, holidays, {});
+      return !day.blocks.some(
+        (b) => s.startMinutes >= b.startMinutes && s.endMinutes <= b.endMinutes,
+      );
+    });
+    expect(draussen.map((s) => `${s.date} ${s.startMinutes}-${s.endMinutes}`)).toEqual([]);
+  });
+
   it("plant keine Schicht außerhalb des Arbeitszeit-Fensters", () => {
     for (const s of shifts) {
       expect(s.startMinutes).toBeGreaterThanOrEqual(11 * 60 + 30);
@@ -70,7 +114,7 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
     }
   });
 
-  it("besetzt die Stoßzeit an jedem offenen Tag mit mindestens 2 Personen", () => {
+  it("hält in der Stoßzeit die erlaubte Personenzahl ein", () => {
     const bad = analysis.peakViolations.map(
       (d) =>
         `${d.date} (${WEEKDAY_SHORT_DE[d.weekday]}, ${d.shiftCount} Dienste): ` +
@@ -80,9 +124,11 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
     expect(bad.length).toBeLessThanOrEqual(seed.maxPeakGaps ?? 0);
   });
 
-  it("Gegenprobe Minute für Minute: 18–21 Uhr nie unter 2 Personen", () => {
-    // Unabhängig von minCoverageOver – stumpf jede Minute zählen. Wäre die
-    // Abtastung dort falsch, meldete die Auswertung fälschlich „alles grün".
+  it("Gegenprobe Minute für Minute: Stoßzeit weder unter- noch überbesetzt", () => {
+    // Unabhängig von minCoverageOver/maxCoverageOver – stumpf jede Minute
+    // zählen. Wäre die Abtastung dort falsch, meldete die Auswertung
+    // fälschlich „alles grün". Die Spitzen sind je Wochentag verschieden,
+    // deshalb kommen sie hier aus derselben Tabelle wie im Scheduler.
     const byDate = new Map<string, typeof shifts>();
     for (const s of shifts) {
       const list = byDate.get(s.date);
@@ -90,22 +136,28 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
       else byDate.set(s.date, [s]);
     }
 
-    const thin: string[] = [];
+    const holidays = publicHolidays(seed.year);
+    const bad: string[] = [];
     for (const [date, onDay] of byDate) {
-      for (const [from, to, label] of [[18 * 60, 21 * 60, "Abend"]] as const) {
-        for (let t = from; t < to; t++) {
+      const day = resolveDay(DEFAULT_WORK_HOURS, date, holidays, {});
+      if (day.closed) continue;
+      for (const peak of PEAK_WINDOWS_BY_WEEKDAY[effectiveWeekdayKey(date, holidays)]) {
+        const from = Math.max(peak.startMinutes, day.window.startMinutes);
+        const to = Math.min(peak.endMinutes, day.window.endMinutes);
+        let off = false;
+        for (let t = from; t < to && !off; t++) {
           const staff = onDay.filter((s) => s.startMinutes <= t && s.endMinutes > t).length;
-          if (staff < 2) {
-            thin.push(`${date} ${label} ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} => ${staff}`);
-            break;
+          if (staff < peak.minStaff || staff > peak.maxStaff) {
+            bad.push(`${date} ${peak.label} ${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")} => ${staff}`);
+            off = true;
           }
         }
       }
     }
     // Muss zur Zählung aus der Auswertung passen – beide Wege dürfen nicht
     // auseinanderlaufen, sonst misst einer von beiden falsch.
-    expect(thin.length).toBe(analysis.peakViolations.length);
-    expect(thin.length).toBeLessThanOrEqual(seed.maxPeakGaps ?? 0);
+    expect(new Set(bad.map((b) => b.slice(0, 10))).size).toBe(analysis.peakViolations.length);
+    expect(analysis.peakViolations.length).toBeLessThanOrEqual(seed.maxPeakGaps ?? 0);
   });
 });
 
@@ -148,7 +200,7 @@ describe("Report", () => {
       }
 
       const violations = analysis.peakViolations;
-      lines.push(`Stoßzeiten unterbesetzt: ${violations.length} Tage`);
+      lines.push(`Stoßzeiten außerhalb der erlaubten Personenzahl: ${violations.length} Tage`);
       for (const d of violations.slice(0, 10)) {
         lines.push(
           `  ${d.date} ${WEEKDAY_SHORT_DE[d.weekday]} — ${d.shiftCount} Dienste, ${d.paidHours} h — ` +

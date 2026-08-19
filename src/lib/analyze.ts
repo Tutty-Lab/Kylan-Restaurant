@@ -15,7 +15,7 @@ import {
   weekdayKeyOf,
   type WeekdayKey,
 } from "./demand";
-import { PEAK_WINDOWS, minCoverageOver } from "./scheduler";
+import { PEAK_WINDOWS_BY_WEEKDAY, maxCoverageOver, minCoverageOver } from "./scheduler";
 import { publicHolidays } from "./holidays";
 import {
   effectiveWeekdayKey,
@@ -28,7 +28,11 @@ export type PeakCoverage = {
   label: string;
   /** Kleinste Besetzung über die ganze Spanne. */
   minStaff: number;
+  /** Größte Besetzung über die Spanne – für die Obergrenze. */
+  maxStaff: number;
   required: number;
+  /** So viele dürfen höchstens da sein. */
+  allowed: number;
   ok: boolean;
 };
 
@@ -109,16 +113,19 @@ export function analyzeSchedule(input: AnalyzeInput): ScheduleAnalysis {
 
     const peaks: PeakCoverage[] = [];
     if (!day.closed) {
-      for (const peak of PEAK_WINDOWS) {
+      for (const peak of PEAK_WINDOWS_BY_WEEKDAY[effectiveWeekdayKey(date, holidays)]) {
         const from = Math.max(peak.startMinutes, day.window.startMinutes);
         const to = Math.min(peak.endMinutes, day.window.endMinutes);
         if (to <= from) continue; // Spitze liegt außerhalb der Arbeitszeit
         const minStaff = minCoverageOver(onDay, from, to);
+        const maxStaff = maxCoverageOver(onDay, from, to);
         peaks.push({
           label: peak.label,
           minStaff,
+          maxStaff,
           required: peak.minStaff,
-          ok: minStaff >= peak.minStaff,
+          allowed: peak.maxStaff,
+          ok: minStaff >= peak.minStaff && maxStaff <= peak.maxStaff,
         });
       }
     }

@@ -13,23 +13,20 @@ import type { DateOverride, WorkHoursConfig } from "./lib/workHours";
 export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB";
 
 /**
- * Vorgaben des Betriebs zur Belegschaft (VietHaus Restaurant):
- * höchstens drei Stammkräfte (Vollzeit oder Teilzeit) und zwei Minijobs –
- * das ist die heutige Besetzung: 3 Vollzeit + 2 Minijob.
- * Wird das nicht eingehalten, plant die App trotzdem – die Mitarbeiterliste
- * weist aber darauf hin.
- */
-export const MAX_STAMM_EMPLOYEES = 5;
-export const MAX_MINIJOB_EMPLOYEES = 1;
-
-/**
- * Minijob bei VietHaus: 43 Stunden im Monat laut Vertrag.
+ * Für Kylan gibt es BEWUSST keine Zahlengrenzen bei der Belegschaft:
+ * weder eine Obergrenze für die Anzahl der Beschäftigten noch eine eigene
+ * Stundendecke für Minijobs.
  *
- * Anders als anderswo ist das hier KEINE aus Wochenstunden abgeleitete Decke,
- * sondern die vertraglich vereinbarte Menge, die der Betrieb genannt hat. Wer
- * mehr einträgt, bekommt einen Hinweis in der Mitarbeiterliste.
+ * Andere Filialen haben so etwas, weil der Betrieb es ausdrücklich gesagt hat
+ * ("höchstens 3 Stammkräfte und 5 Minijobs"). Hier wurde nur die heutige
+ * Besetzung genannt. Die vertraglichen 43 h einer Minijob-Kraft stehen ohnehin
+ * als deren Monats-Soll in der Mitarbeiterliste – eine zusätzliche Prüfung
+ * dagegen wäre doppelt gemoppelt und würde beim Einstellen einer weiteren
+ * Kraft grundlos meckern.
+ *
+ * MINIJOB bleibt als Anstellungsart erhalten: sie steht auf dem Stundenzettel
+ * und in der Lohnabrechnung, nur eben ohne eigene Grenze.
  */
-export const MINIJOB_MAX_MONTHLY_HOURS = 43;
 
 export type ShiftType = "EARLY" | "LATE" | "CUSTOM";
 
@@ -37,6 +34,14 @@ export type Employee = {
   id: string;
   name: string;
   employmentType: EmploymentType;
+  /**
+   * Ist diese Person der Chef?
+   *
+   * Der Chef arbeitet mit und zaehlt bei der Besetzung ganz normal mit – auch
+   * bei der Obergrenze der Stosszeit. Fuer ihn gelten aber zwei eigene Regeln:
+   * fuenf Arbeitstage je Woche, und samstags ist er nicht im Laden.
+   */
+  isOwner?: boolean;
   /** Monatliches Soll in Minuten (Integer). 176 h => 10560. */
   targetMinutes: number;
   /**
@@ -93,3 +98,9 @@ export type ShiftToken = {
   employeeId: string;
   paidMinutes: number;
 };
+
+/** So viele Tage je Woche arbeitet der Chef. */
+export const OWNER_DAYS_PER_WEEK = 5;
+
+/** An diesem Wochentag ist der Chef nicht im Laden. */
+export const OWNER_FREE_WEEKDAY = "saturday" as const;

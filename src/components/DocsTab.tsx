@@ -5,7 +5,7 @@ import {
   type WeekdayKey,
 } from "../lib/demand";
 import { SHIFT_LENGTHS } from "../lib/shifts";
-import { PEAK_WINDOWS } from "../lib/scheduler";
+import { PEAK_WINDOWS_BY_WEEKDAY } from "../lib/scheduler";
 import { calculatePause, minutesToTime, presenceFromPaid } from "../lib/time";
 
 const WEEKDAY_ORDER: WeekdayKey[] = [
@@ -119,8 +119,9 @@ export function DocsTab() {
       <Section title="2) Tỉ lệ ca tối vs ca sáng">
         <p>
           Với số giờ đã chia cho mỗi ngày, phần trăm dưới đây là <b>tỉ lệ giờ dành cho ca tối</b> (phần
-          còn lại là ca sáng). VietHaus là nhà hàng mở <b>11:30–22:00</b>, khách đông về buổi tối nên{" "}
-          <b>ca tối chiếm hơn nửa</b>, cuối tuần còn cao hơn.
+          còn lại là ca sáng). Kylan <b>thứ 3–thứ 6</b> mở hai khung <b>11:30–15:00</b> và{" "}
+          <b>17:00–22:00</b>; <b>thứ 7 &amp; chủ nhật</b> mở liền <b>13:00–22:00</b>. Sáng thứ 3–thứ 6
+          đông khách, tối chủ nhật cũng đông.
         </p>
         <WeekdayTable
           values={LATE_SHIFT_RATIOS}
@@ -128,13 +129,36 @@ export function DocsTab() {
           highlight={(k) => LATE_SHIFT_RATIOS[k] >= 0.5}
         />
         <p className="text-slate-600">
-          Giờ cao điểm:{" "}
-          {PEAK_WINDOWS.map(
-            (p) =>
-              `${minutesToTime(p.startMinutes)}–${minutesToTime(p.endMinutes)} cần ít nhất ${p.minStaff} người`,
-          ).join(" · ")}
-          , và phải đủ <b>suốt cả khung</b> chứ không chỉ tại một thời điểm. Mở cửa và đóng cửa thì{" "}
-          <b>một người là đủ</b>.
+          Giờ cao điểm <b>khác nhau theo thứ</b>:
+        </p>
+        <div className="overflow-x-auto">
+          <table className="text-sm border-collapse">
+            <tbody>
+              {WEEKDAY_ORDER.filter((k) => PEAK_WINDOWS_BY_WEEKDAY[k].length > 0).map((k) => (
+                <tr key={k}>
+                  <td className="border border-slate-200 px-3 py-1 text-slate-600">
+                    {WEEKDAY_LABELS_VI[k]}
+                  </td>
+                  <td className="border border-slate-200 px-3 py-1 font-medium">
+                    {PEAK_WINDOWS_BY_WEEKDAY[k]
+                      .map(
+                        (p) =>
+                          `${minutesToTime(p.startMinutes)}–${minutesToTime(p.endMinutes)}: ` +
+                          (p.minStaff === p.maxStaff
+                            ? `đúng ${p.minStaff} người`
+                            : `${p.minStaff}–${p.maxStaff} người`),
+                      )
+                      .join(" · ")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-slate-600">
+          Phải đủ <b>suốt cả khung</b> chứ không chỉ tại một thời điểm, và{" "}
+          <b>không được vượt</b> số người tối đa — quán nhỏ, tính cả chủ. Mở cửa và đóng cửa thì
+          một người là đủ.
         </p>
         <p className="text-slate-600">
           Cách rẻ nhất để phủ một ngày <b>không phải</b> hai ca dài bằng nhau. App <b>tự dò</b> tổ
@@ -215,18 +239,18 @@ export function DocsTab() {
         </p>
       </Section>
 
-      <Section title="4) Ngày lễ (tự phát hiện — bang Sachsen)">
+      <Section title="4) Ngày lễ (tự phát hiện — bang Hamburg)">
         <p>
-          Ứng dụng tự tính <b>ngày lễ chính thức của Sachsen</b> (Dippoldiswalde thuộc Sachsen)
+          Ứng dụng tự tính <b>ngày lễ chính thức của Hamburg</b> (Dorotheenstraße thuộc Hamburg)
           cho năm đang chọn, gồm cả lễ cố định và lễ theo Phục Sinh. Ngày lễ được xử lý{" "}
           <b>như Chủ nhật</b> (nhu cầu + khung giờ riêng). Danh sách lễ trong tháng hiện ở tab{" "}
           <b>Cài đặt</b>.
         </p>
         <p className="mt-2">
-          Sachsen theo Tin Lành nên có <b>Reformationstag (31.10)</b> và <b>Buß- und Bettag</b>
-          (thứ Tư trước 23.11 — cả nước Đức chỉ Sachsen còn giữ ngày này);
-          ngược lại <b>không</b> có Fronleichnam, Allerheiligen (đó là các bang Công giáo)
-          hay Ostersonntag/Pfingstsonntag (chỉ Brandenburg).
+          Hamburg theo Tin Lành nên có <b>Reformationstag (31.10)</b>. Ngược lại{" "}
+          <b>không</b> có <b>Buß- und Bettag</b> (cả nước Đức chỉ còn Sachsen giữ ngày này),
+          cũng không có Fronleichnam hay Allerheiligen (đó là các bang Công giáo),
+          và không có Ostersonntag/Pfingstsonntag (chỉ Brandenburg).
         </p>
       </Section>
 

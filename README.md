@@ -1,15 +1,36 @@
-# Dienstplan & Stundenzettel — VietHaus Restaurant
+# Dienstplan & Stundenzettel — Kylan Restaurant
 
-Herrengasse 19, 01744 Dippoldiswalde. Abgeleitet aus der Mrson-App
-(die ihrerseits aus DongDo stammt); Minijob als eigene Anstellungsart ist
-von dort übernommen, weil VietHaus zwei Minijob-Kräfte beschäftigt.
+Dorotheenstraße 186, 22299 Hamburg. Abgeleitet aus der VietHaus-App
+(die ihrerseits aus Mrson und davor DongDo stammt).
 
-**Vorgaben des Chefs:** Arbeitszeit 11:30–22:00 durchgehend (kein Mittags-
-schluss). Kein fester Ruhetag hinterlegt – ein Schließtag lässt sich in
-*Cài đặt* je Wochentag ankreuzen. Voll wird es abends am Wochenende
-(Fr/Sa/So); der Samstagsumsatz ist 1,5-mal so hoch wie der Montagsumsatz.
-Keine festen Schichten für die Vollzeit-Kräfte – die App verteilt frei.
-Belegschaft: 3 Vollzeit (200 h / 160 h / 160 h im Monat) + 2 Minijob (je 43 h).
+**Vorgaben der Chefin:**
+
+- **Montag geschlossen.**
+- **Di–Fr zwei getrennte Blöcke:** 11:30–15:00 und 17:00–22:00. Der längste
+  zusammenhängende Block ist damit 5 h – das ist die härteste Grenze der
+  ganzen Planung, siehe unten.
+- **Sa/So durchgehend** 13:00–22:00, **Feiertage** 15:00–22:00.
+- Voll wird es **Di–Fr vormittags** und **sonntags abends**. In diesen
+  Fenstern dürfen **höchstens 2 Personen** stehen – der Laden ist klein.
+  Der Chef zählt dabei ganz normal mit.
+- **Keine Pause**: `calculatePause` gibt immer 0 zurück.
+- **Keine Ober- oder Untergrenze für die Anzahl der Beschäftigten** und keine
+  eigene Stundendecke für Minijobs. Andere Filialen haben so etwas, weil deren
+  Betrieb es ausdrücklich gesagt hat; hier wurde nur die heutige Besetzung
+  genannt.
+- **Der Chef arbeitet mit** (Häkchen *Chủ quán* in der Mitarbeiterliste):
+  fünf Tage die Woche, **samstags nicht im Laden**. Seine Stunden zählen für
+  den Betrieb wie die aller anderen.
+
+Belegschaft laut Angabe: 1 Vollzeit (172 h), 1 Teilzeit (150 h),
+3 Teilzeit (je 86 h), 1 Minijob (max. 43 h).
+
+> **Offener Punkt – 172 h gehen derzeit nicht auf.** Solange jede Person nur
+> **einen** Dienst pro Tag bekommt, ist Di–Fr bei 5 h Schluss; nur Sa/So
+> erlauben 9 h. Die Monatsdecke liegt damit bei rund 157–170 h. Erst wenn
+> **geteilte Dienste** erlaubt sind (Mittagsblock **und** Abendblock am selben
+> Tag), passen 172 h. Die Test-Fixture in `seedData.ts` rechnet deshalb
+> vorläufig mit kleineren Zahlen; der Kommentar dort sagt es ausdrücklich.
 
 Web-App zur **automatischen Erstellung monatlicher Dienstpläne** und **druckbarer
 deutscher Stundenzettel** für ein Restaurant / Geschäft in Deutschland.
@@ -52,8 +73,8 @@ npm run preview  # Produktions-Build lokal ansehen
 ## Bedienung
 
 1. **Einstellungen** – Firmenname, Anschrift, Monat, Jahr; **Arbeitszeit-Fenster
-   je Wochentag + Feiertag** (giờ làm; Standard: täglich 11:30–22:00, **kein
-   fester Schließtag**). **Feiertage (Sachsen)** werden automatisch erkannt
+   je Wochentag + Feiertag** (giờ làm; mehrere Blöcke je Tag möglich,
+   **Montag geschlossen**). **Feiertage (Hamburg)** werden automatisch erkannt
    und angezeigt. Unter **„Ngày đặc biệt"** lassen sich einzelne Tage
    überschreiben (geschlossen oder abweichende Zeiten, z.B. halber Tag).
 2. **Mitarbeiter** – Vollzeit/Teilzeit und monatliche Sollstunden pflegen
@@ -73,24 +94,28 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
 
 - Max. **9 bezahlte Stunden** pro Tag, **ein Dienst** pro Mitarbeiter und Tag.
 - Höchstens **6 aufeinanderfolgende** Arbeitstage.
-- **Pause** (`calculatePause`), Vorgabe des Betriebs „nach spätestens 4 Stunden
-  muss die Kraft eine Pause nehmen": bis 4 h = 0 Min, über 4 h = 30 Min, ab 9 h
-  = 45 Min (ArbZG-Minimum). Strenger als das Gesetz, das erst ab über 6 h eine
-  Pause verlangt. Die Pause zählt **nicht** zum Soll, verlängert aber die
-  Anwesenheit: `presence = paid + pause`. Eine 9-h-Schicht belegt damit 9,75 h
-  und passt in das Fenster 11:30–22:00 (10,5 h).
+- **Keine Pause** (`calculatePause` gibt 0 zurück) – so die Vorgabe der
+  Chefin. Damit ist `presence = paid`, eine 9-h-Schicht belegt genau 9 h.
 - Schichtlängen: **3 bis 9 Stunden**. Vollzeit bekommt 4..9 h, Teilzeit 3..9 h.
   Etwa jede zehnte Schicht wird bewusst auf 4–5 h gekürzt
   (`SHORT_SHIFT_CHANCE`), damit die Pläne nicht mechanisch aussehen – aber nur,
   wenn der Tag keinen langen Dienst mehr für die Stoßzeit braucht.
-- **Stoßzeiten** (`PEAK_WINDOWS`): 18:00–21:00 sollen
-  durchgehend mit **mindestens 2 Personen** besetzt sein – geprüft wird die
-  kleinste Besetzung über die ganze Spanne, nicht ein einzelner Zeitpunkt.
-  Reicht die Belegschaft dafür nicht, bleibt der Plan gültig; das Dashboard
-  weist die betroffenen Tage als Warnung aus (`analyzeSchedule.peakViolations`).
-- Nachfrage-Gewichte pro Wochentag (`DAY_WEIGHTS`) → mehr Stunden am
-  **Wochenende** (Fr/Sa/So). Belegt sind nur Montag (Anker 1,0) und Samstag
-  (1,5); Do/Fr/So sind interpoliert. **Feiertage zählen wie
+- **Stoßzeiten** (`PEAK_WINDOWS_BY_WEEKDAY`, je Wochentag verschieden):
+  Di–Fr der Mittagsblock 11:30–15:00, Sa/So der Abend 17:00–22:00. Dort sind
+  **höchstens 2 Personen** erlaubt und mindestens 1. Geprüft wird über die
+  **ganze Spanne**, nicht an einem einzelnen Zeitpunkt.
+  - Die Obergrenze greift schon bei der **Wahl der Schichtlänge**
+    (`peakLengthCapHours`), nicht erst beim Anordnen: ein 9-h-Dienst hat in
+    einem 9-h-Fenster genau **eine** mögliche Lage, drei davon lassen sich
+    durch kein Umsortieren mehr entzerren.
+  - `repairPeakExcess` tauscht danach noch Termine (die Dauer bleibt bei der
+    Person, das Monats-Soll also unangetastet), solange das die Lage
+    verbessert.
+  - Bleibt trotzdem ein Tag übrig, ist der Plan gültig; das Dashboard weist ihn
+    als Warnung aus (`analyzeSchedule.peakViolations`).
+- Nachfrage-Gewichte pro Wochentag (`DAY_WEIGHTS`) → mehr Stunden zum
+  **Wochenende** hin. Der Ausschlag ist bewusst flach: mehr Stunden helfen
+  nichts, wo ohnehin nur zwei Leute stehen dürfen. **Feiertage zählen wie
   Sonntag** (Nachfrage + Zeitfenster).
 - **Arbeitszeit-Fenster je Tag** (giờ làm): Früh am Fenster-Beginn, Spät am
   Fenster-Ende. Geschlossene Tage bekommen keine Schicht; an verkürzten Tagen
@@ -112,8 +137,8 @@ src/
     demand.ts              Tagesgewichte, Spätschicht-Quoten, Kalender
     splitTargetHours.ts    Zerlegung des Solls in Schichtlängen (DP)
     consecutive.ts         Ketten aufeinanderfolgender Tage, seeded RNG
-    workHours.ts           Arbeitszeit-Fenster je Tag + Ausnahmen (Overrides)
-    holidays.ts            Sachsen-Feiertage (Osterformel/Computus)
+    workHours.ts           Öffnungs-BLÖCKE je Tag (mehrere möglich) + Overrides
+    holidays.ts            Hamburger Feiertage (Osterformel/Computus)
     scheduler.ts           Greedy-Scheduler, Reparaturlauf, Stoßzeiten-Layout
     validation.ts          Prüfung aller Regeln
     analyze.ts             Auswertung: Stoßzeiten, Gewichtstreue, Abweichung

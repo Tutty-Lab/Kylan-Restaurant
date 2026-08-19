@@ -1,6 +1,5 @@
 import type { UseScheduleReturn } from "../hooks/useSchedule";
-import { minutesToDecimalHours, minutesToTime } from "../lib/time";
-import { PEAK_WINDOWS } from "../lib/scheduler";
+import { minutesToDecimalHours } from "../lib/time";
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
@@ -69,17 +68,12 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
       {peakGaps.length > 0 && (
         <div className="mt-2 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2">
           {/*
-            Fenster und Mindestbesetzung kommen aus PEAK_WINDOWS. Vorher stand
-            der Text fest im Code – nach der Umstellung auf eine durchgehende
-            Stoßzeit nannte die Warnung noch die alten Zeiten.
+            Zeiten und Grenzen kommen aus PEAK_WINDOWS_BY_WEEKDAY. Sie sind je
+            Wochentag verschieden (Di–Fr mittags, Sa/So abends), deshalb steht
+            hier keine feste Uhrzeit mehr, sondern nur die Tage mit Abweichung.
           */}
           <div className="font-medium">
-            {peakGaps.length} ngày chưa đủ người trong giờ cao điểm (
-            {PEAK_WINDOWS.map(
-              (p) =>
-                `${minutesToTime(p.startMinutes)}–${minutesToTime(p.endMinutes)}: ${p.minStaff} người`,
-            ).join(", ")}
-            ).
+            {peakGaps.length} ngày chưa đúng số người trong giờ cao điểm.
           </div>
           <div className="mt-1 space-y-0.5">
             {peakGaps.slice(0, 6).map((d) => (
@@ -87,7 +81,11 @@ export function Dashboard({ store }: { store: UseScheduleReturn }) {
                 {shortDate(d.date)}{" "}
                 {d.peaks
                   .filter((p) => !p.ok)
-                  .map((p) => `${p.minStaff}/${p.required} người`)
+                  .map((p) =>
+                    p.minStaff < p.required
+                      ? `${p.label} thiếu: ${p.minStaff}/${p.required} người`
+                      : `${p.label} thừa: ${p.maxStaff}, tối đa ${p.allowed}`,
+                  )
                   .join(" · ")}{" "}
                 <span className="opacity-70">({d.shiftCount} ca, {d.paidHours}h)</span>
               </div>

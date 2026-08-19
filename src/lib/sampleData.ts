@@ -19,7 +19,7 @@ export function makeEmployee(
  * 3 Vollzeit (1x 200 h, 2x 160 h) + 2 Minijob (je 43 h). Summe = 606 h.
  */
 export const SAMPLE_EMPLOYEES: Employee[] = [
-  makeEmployee("VZ1", "VZ1", "VOLLZEIT", 172),
+  makeEmployee("VZ1", "VZ1", "VOLLZEIT", 120),
   makeEmployee("TZ1", "TZ1", "TEILZEIT", 150),
   makeEmployee("TZ2", "TZ2", "TEILZEIT", 86),
   makeEmployee("TZ3", "TZ3", "TEILZEIT", 86),

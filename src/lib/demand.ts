@@ -15,24 +15,27 @@ export type WeekdayKey =
 
 /**
  * Nachfrage-Gewichte je Wochentag (keine Mitarbeiterzahlen!).
- * Vorgabe des Chefs (VietHaus Restaurant): Umsatz am Samstag ist 1,5-mal so
- * hoch wie am Montag; voll wird es abends am Wochenende (Fr/Sa/So).
  *
- * BELEGT sind nur zwei Werte: Montag 1,0 als Anker und Samstag 1,5. Freitag,
- * Sonntag und Donnerstag sind interpoliert – Fr/So liegen laut Chef über den
- * Wochentagen, aber unter dem Samstag. Diese drei Zahlen sind der erste
- * Stellknopf, wenn der Plan sich in der Praxis schief anfühlt.
- * VietHaus hat keinen Ruhetag, alle sieben Tage sind offen. Das Gewicht
- * steuert nur, wie viele Stunden ein offener Tag bekommt.
+ * Angabe der Chefin: Di–Fr ist vormittags viel los, Sonntag abends.
+ *
+ * Das Gewicht steuert aber nur, wie viele STUNDEN ein Tag bekommt – und mehr
+ * Stunden helfen nichts, wo ohnehin höchstens zwei Leute stehen dürfen.
+ * Sa/So sind genau dort eng: von 13:00–22:00 liegen fünf der neun Stunden in
+ * der gedeckelten Abendspitze. Di–Fr ist die Spitze nur 3,5 h lang, der ganze
+ * Abend bleibt frei.
+ *
+ * Deshalb ist der Aufschlag zum Wochenende hin bewusst FLACH gehalten: ein
+ * stärkerer Ausschlag füllt nur Tage auf, die die Leute gar nicht aufnehmen
+ * können, und erzeugt Überbesetzung statt Umsatz.
  */
 export const DAY_WEIGHTS: Record<WeekdayKey, number> = {
-  monday: 1.0, // Anker: der ruhigste Tag laut Chef
+  monday: 1.0, // geschlossen (Gewicht nur relevant, falls doch geöffnet)
   tuesday: 1.0,
   wednesday: 1.0,
-  thursday: 1.05,
-  friday: 1.35,
-  saturday: 1.5, // belegt: Umsatz 1,5-mal Montag
-  sunday: 1.4,
+  thursday: 1.1,
+  friday: 1.3,
+  saturday: 1.4,
+  sunday: 1.3,
 };
 
 /**

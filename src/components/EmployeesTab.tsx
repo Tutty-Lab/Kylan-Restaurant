@@ -134,6 +134,14 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                     <span className="text-slate-400">h</span>
                   </div>
                 </label>
+                <label className="flex items-center gap-2 sm:pb-1.5 cursor-pointer select-none" title="Chủ quán: làm 5 ngày/tuần, thứ 7 không ở quán">
+                  <input
+                    type="checkbox"
+                    checked={!!emp.isOwner}
+                    onChange={(e) => updateEmployee(emp.id, { isOwner: e.target.checked })}
+                  />
+                  <span className="text-xs text-slate-600">Chủ</span>
+                </label>
                 <label className="flex items-center gap-2 sm:pb-1.5 cursor-pointer select-none">
                   <input
                     type="checkbox"

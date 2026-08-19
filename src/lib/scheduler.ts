@@ -27,10 +27,15 @@ import {
 } from "./demand";
 import { getShiftTemplate, type TemplateType } from "./shifts";
 import { consecutiveRunLengthWith, seededRandom } from "./consecutive";
+import { weekStartOf } from "./weeks";
+import { OWNER_DAYS_PER_WEEK, OWNER_FREE_WEEKDAY } from "../types";
 import { presenceFromPaid } from "./time";
 import {
   effectiveWeekdayKey,
+  frameOf,
+  longestBlock,
   resolveDay,
+  type DayBlocks,
   type DayWindow,
   type ResolvedDay,
   type OverrideMap,
@@ -63,6 +68,8 @@ type SchedulerState = {
   rawTarget: Map<string, number>; // ISO -> rohes Tages-Soll in Minuten
   dateState: Map<string, DateState>;
   worked: Map<string, Set<string>>; // employeeId -> Set<ISO>
+  /** IDs der Chefs – für sie gelten eigene Regeln (siehe ownerDayOk). */
+  owners: Set<string>;
   weekendCount: Map<string, number>; // employeeId -> Anzahl Fr/Sa-Schichten
   remaining: Map<string, number>; // employeeId -> noch zu verplanende Minuten
   shifts: Shift[];
@@ -70,15 +77,24 @@ type SchedulerState = {
   effKeyOf: (isoDate: string) => WeekdayKey;
   /** Aufgelöster Tag (geschlossen? + Arbeitszeit-Fenster) für ein Datum. */
   dayOf: (isoDate: string) => ResolvedDay;
+  /** Stoßzeiten dieses Datums – je Wochentag verschieden. */
+  peaksOf: (isoDate: string) => readonly PeakWindow[];
   rng: () => number;
   /** true = Schichtlängen mischen; false = immer die längste (Rückfallmodus). */
   varyLengths: boolean;
 };
 
-/** Länge des Zeitfensters in Minuten (0 wenn geschlossen). */
+/**
+ * Längster zusammenhängender Block des Tages (0 wenn geschlossen).
+ *
+ * Maßgeblich ist der längste EINZELNE Block, nicht der Rahmen von der ersten
+ * Öffnung bis zur letzten Schließung: eine Schicht muss komplett in einen
+ * Block passen. Bei 11:30–15:00 und 17:00–22:00 sind das 5 h, nicht 10,5 h.
+ */
 function windowLength(day: ResolvedDay): number {
-  return day.closed ? 0 : day.window.endMinutes - day.window.startMinutes;
+  return day.closed ? 0 : longestBlock(day.blocks);
 }
+
 
 let shiftIdCounter = 0;
 function nextShiftId(): string {
@@ -135,24 +151,52 @@ const SHORT_SHIFT_HOURS: readonly number[] = [4, 5];
 const ALL_HOURS: readonly number[] = [3, 4, 5, 6, 7, 8, 9];
 
 // ── Stoßzeiten (peak windows) ───────────────────────────────────────────────
-// Vorgabe des Chefs: mittags 12–13 Uhr und abends 17–19 Uhr müssen JEDERZEIT
-// mindestens zwei Leute im Laden stehen – nicht nur an einem Messpunkt,
-// sondern über die ganze Spanne.
+// Vorgabe der Chefin (Kylan): die Spitze liegt NICHT jeden Tag gleich.
+//   Di–Fr  vormittags voll   -> 11:30–15:00
+//   Sa/So  abends voll       -> 17:00–22:00
+// In der Spitze dürfen HÖCHSTENS zwei Leute da sein – der Laden ist klein,
+// und der Chef zählt mit. Eine Untergrenze von zwei gibt es NICHT: gefordert
+// ist nur, dass überhaupt jemand da ist.
 export type PeakWindow = {
   label: string;
   startMinutes: number;
   endMinutes: number;
+  /** So viele müssen mindestens da sein. */
   minStaff: number;
+  /** So viele dürfen höchstens da sein (inklusive Chef). */
+  maxStaff: number;
 };
 
-export const PEAK_WINDOWS: readonly PeakWindow[] = [
-  // ANNAHME, vom Chef noch zu bestätigen: VietHaus ist ein Restaurant mit
-  // Abendgeschäft, die Spitze liegt deshalb abends. Vorgegeben war bisher nur
-  // „voll am Wochenende" – über die Uhrzeit wurde nichts gesagt. Falls die
-  // Mittagszeit ebenfalls doppelt besetzt sein soll, kommt hier eine zweite
-  // Zeile dazu; alles andere passt sich automatisch an.
-  { label: "Abend", startMinutes: 18 * 60, endMinutes: 21 * 60, minStaff: 2 },
-];
+const MITTAG: PeakWindow = {
+  label: "Trưa",
+  startMinutes: 11 * 60 + 30,
+  endMinutes: 15 * 60,
+  minStaff: 1,
+  maxStaff: 2,
+};
+
+const ABEND: PeakWindow = {
+  label: "Tối",
+  startMinutes: 17 * 60,
+  endMinutes: 22 * 60,
+  minStaff: 1,
+  maxStaff: 2,
+};
+
+/**
+ * Stoßzeiten je Wochentag. Montag ist geschlossen, steht aber der
+ * Vollständigkeit halber drin (ein Datum-Override kann den Tag öffnen).
+ * Feiertage werden wie Sonntag behandelt – siehe effectiveWeekdayKey.
+ */
+export const PEAK_WINDOWS_BY_WEEKDAY: Record<WeekdayKey, readonly PeakWindow[]> = {
+  monday: [],
+  tuesday: [MITTAG],
+  wednesday: [MITTAG],
+  thursday: [MITTAG],
+  friday: [MITTAG],
+  saturday: [ABEND],
+  sunday: [ABEND],
+};
 
 /** Wie viele Leute sind zum Zeitpunkt `t` anwesend (Anwesenheit inkl. Pause)? */
 function coverageAt(shifts: Shift[], t: number): number {
@@ -178,19 +222,46 @@ export function minCoverageOver(shifts: Shift[], from: number, to: number): numb
 }
 
 /**
- * Wie viele Personen fehlen an diesem Tag über alle Stoßzeiten zusammen?
- * 0 = beide Spitzen sind ausreichend besetzt. Spitzen, die gar nicht ins
- * Arbeitszeit-Fenster fallen, zählen nicht mit.
+ * Größte Besetzung im halboffenen Intervall [from, to).
+ * Gegenstück zu minCoverageOver – für die Obergrenze ("höchstens zwei").
  */
-export function peakDeficit(shifts: Shift[], window: { startMinutes: number; endMinutes: number }): number {
-  let deficit = 0;
-  for (const peak of PEAK_WINDOWS) {
+export function maxCoverageOver(shifts: Shift[], from: number, to: number): number {
+  const probes = new Set<number>([from]);
+  for (const s of shifts) {
+    if (s.startMinutes > from && s.startMinutes < to) probes.add(s.startMinutes);
+    if (s.endMinutes > from && s.endMinutes < to) probes.add(s.endMinutes);
+  }
+  let max = 0;
+  for (const t of probes) max = Math.max(max, coverageAt(shifts, t));
+  return max;
+}
+
+/**
+ * Wie weit liegt der Tag neben der erlaubten Besetzung der Stoßzeiten?
+ *
+ * Gezählt wird BEIDES: fehlende Personen und zu viele. Der Laden ist klein –
+ * "höchstens zwei, den Chef mitgerechnet" ist genauso eine Vorgabe wie
+ * "mindestens zwei". Weil Anordnung und Reparatur alle über diese eine Zahl
+ * gesteuert werden, wirkt die Obergrenze damit überall, ohne dass jede
+ * Funktion sie einzeln kennen muss.
+ *
+ * 0 = alle Spitzen des Tages liegen im erlaubten Band. Spitzen, die gar nicht
+ * ins Arbeitszeit-Fenster fallen, zählen nicht mit.
+ */
+export function peakDeficit(
+  shifts: Shift[],
+  window: { startMinutes: number; endMinutes: number },
+  peaks: readonly PeakWindow[],
+): number {
+  let off = 0;
+  for (const peak of peaks) {
     const from = Math.max(peak.startMinutes, window.startMinutes);
     const to = Math.min(peak.endMinutes, window.endMinutes);
     if (to <= from) continue; // Spitze liegt außerhalb der Arbeitszeit
-    deficit += Math.max(0, peak.minStaff - minCoverageOver(shifts, from, to));
+    off += Math.max(0, peak.minStaff - minCoverageOver(shifts, from, to));
+    off += Math.max(0, maxCoverageOver(shifts, from, to) - peak.maxStaff);
   }
-  return deficit;
+  return off;
 }
 
 /**
@@ -261,9 +332,9 @@ export function shiftHoursForPresence(presenceMinutes: number): number {
  * dass dort nur kurze Dienste möglich sind – und die decken die Stoßzeit nie,
  * egal wie man sie schiebt.
  */
-function peakFloorMinutes(day: ResolvedDay): number {
+function peakFloorMinutes(day: ResolvedDay, peaks: readonly PeakWindow[]): number {
   if (day.closed) return 0;
-  return cheapestPeakCover(day.window).reduce((sum, h) => sum + h * 60, 0);
+  return cheapestPeakCover(day.blocks, peaks).reduce((sum, h) => sum + h * 60, 0);
 }
 
 const coverCache = new Map<string, number[]>();
@@ -281,12 +352,16 @@ const coverCache = new Map<string, number[]>();
  * hinein. Solche Kombinationen findet man nur, wenn man sie durchprobiert –
  * und zwar mit derselben Anordnungslogik, die später auch real läuft.
  */
-export function cheapestPeakCover(window: DayWindow): number[] {
-  const key = `${window.startMinutes}-${window.endMinutes}`;
+export function cheapestPeakCover(blocks: DayBlocks, peaks: readonly PeakWindow[]): number[] {
+  const key =
+    blocks.map((b) => `${b.startMinutes}-${b.endMinutes}`).join("+") +
+    "|" +
+    peaks.map((p) => `${p.startMinutes}-${p.endMinutes}x${p.minStaff}-${p.maxStaff}`).join(",");
   const cached = coverCache.get(key);
   if (cached) return cached;
 
-  const span = window.endMinutes - window.startMinutes;
+  // Eine Schicht muss komplett in EINEN Block passen.
+  const span = longestBlock(blocks);
   const usable = ALL_HOURS.filter((h) => presenceFromPaid(h * 60) <= span);
 
   let found: number[] = [];
@@ -299,7 +374,7 @@ export function cheapestPeakCover(window: DayWindow): number[] {
     const recurse = (from: number) => {
       if (combo.length === count) {
         const total = combo.reduce((a, b) => a + b, 0);
-        if (total < bestTotal && canCoverDay(window, combo)) {
+        if (total < bestTotal && canCoverDay(blocks, combo, peaks)) {
           bestTotal = total;
           best = [...combo];
         }
@@ -321,24 +396,25 @@ export function cheapestPeakCover(window: DayWindow): number[] {
 }
 
 /** Lässt sich der Tag mit genau diesen Längen vollständig abdecken? */
-function canCoverDay(window: DayWindow, hours: number[]): boolean {
+function canCoverDay(blocks: DayBlocks, hours: number[], peaks: readonly PeakWindow[]): boolean {
   const probe: Shift[] = hours.map((h, i) => ({
     id: `probe-${i}`,
     employeeId: `probe-${i}`,
     date: "probe",
-    startMinutes: window.startMinutes,
-    endMinutes: window.startMinutes + presenceFromPaid(h * 60),
+    startMinutes: blocks[0].startMinutes,
+    endMinutes: blocks[0].startMinutes + presenceFromPaid(h * 60),
     pauseMinutes: h * 60 - h * 60 + (presenceFromPaid(h * 60) - h * 60),
     paidMinutes: h * 60,
     shiftType: "EARLY",
     generated: true,
   }));
 
-  arrangeForPeaks(window, probe);
+  arrangeForPeaks(blocks, probe, peaks);
 
-  const opens = probe.some((s) => s.startMinutes === window.startMinutes);
-  const closes = probe.some((s) => s.endMinutes === window.endMinutes);
-  return opens && closes && peakDeficit(probe, window) === 0;
+  const frame = frameOf(blocks);
+  const opens = probe.some((s) => s.startMinutes === frame.startMinutes);
+  const closes = probe.some((s) => s.endMinutes === frame.endMinutes);
+  return opens && closes && peakDeficit(probe, frameOf(blocks), peaks) === 0;
 }
 
 /** Bezahlte Stunden aller Dienste eines Tages. */
@@ -370,7 +446,7 @@ function coverFilledBy(cover: readonly number[], hours: number[]): number {
 function coverFilledFor(state: SchedulerState, isoDate: string, hours: number[]): number {
   const day = state.dayOf(isoDate);
   if (day.closed) return Number.POSITIVE_INFINITY;
-  const cover = cheapestPeakCover(day.window);
+  const cover = cheapestPeakCover(day.blocks, state.peaksOf(isoDate));
   if (cover.length === 0) return Number.POSITIVE_INFINITY;
   return coverFilledBy(cover, hours);
 }
@@ -379,7 +455,7 @@ function coverFilledFor(state: SchedulerState, isoDate: string, hours: number[])
 function coverSize(state: SchedulerState, isoDate: string): number {
   const day = state.dayOf(isoDate);
   if (day.closed) return 0;
-  return cheapestPeakCover(day.window).length;
+  return cheapestPeakCover(day.blocks, state.peaksOf(isoDate)).length;
 }
 
 /**
@@ -389,7 +465,7 @@ function coverSize(state: SchedulerState, isoDate: string): number {
 function missingCoverHours(state: SchedulerState, isoDate: string): number {
   const day = state.dayOf(isoDate);
   if (day.closed) return 0;
-  const need = [...cheapestPeakCover(day.window)];
+  const need = [...cheapestPeakCover(day.blocks, state.peaksOf(isoDate))];
   if (need.length === 0) return 0;
 
   for (const h of dayPaidHours(state, isoDate).sort((a, b) => b - a)) {
@@ -397,6 +473,57 @@ function missingCoverHours(state: SchedulerState, isoDate: string): number {
     if (idx >= 0) need.splice(idx, 1);
   }
   return need.length === 0 ? 0 : Math.max(...need);
+}
+
+/**
+ * Wie lang darf ein Dienst höchstens sein, wenn er eine Stoßzeit KOMPLETT
+ * meiden soll? Das ist die längste Lücke, die neben dem Fenster noch übrig
+ * bleibt – in irgendeinem Block des Tages.
+ *
+ * Samstag 13–22 Uhr mit Spitze 17–22: davor bleiben 4 h, danach nichts.
+ * Dienstag 11:30–15 + 17–22 mit Spitze am Vormittag: der ganze Abendblock,
+ * also 5 h.
+ */
+function dodgeLimitMinutes(blocks: DayBlocks, peak: PeakWindow): number {
+  let best = 0;
+  for (const b of blocks) {
+    const vor = Math.min(b.endMinutes, peak.startMinutes) - b.startMinutes;
+    const nach = b.endMinutes - Math.max(b.startMinutes, peak.endMinutes);
+    best = Math.max(best, vor, nach);
+  }
+  return Math.max(0, best);
+}
+
+/**
+ * Obergrenze für die Länge des NÄCHSTEN Dienstes an diesem Tag, damit die
+ * Stoßzeit nicht überbesetzt wird. Unendlich, solange noch Platz im Fenster
+ * ist.
+ *
+ * Der Grund für diese Prüfung: Verschieben allein rettet nichts mehr. An einem
+ * Samstag 13–22 Uhr hat ein 9-h-Dienst genau EINE mögliche Lage. Standen dort
+ * erst einmal drei 9-h-Dienste, waren zwangsläufig drei Leute im Abendfenster,
+ * obwohl höchstens zwei erlaubt sind – kein Umsortieren konnte das heilen.
+ * Also muss die Grenze schon bei der Wahl der LÄNGE greifen: sobald so viele
+ * lange Dienste am Tag hängen, wie das Fenster Personen zulässt, darf der
+ * nächste nur noch so lang sein, dass er komplett daneben passt.
+ */
+function peakLengthCapHours(
+  blocks: DayBlocks,
+  onDay: readonly Shift[],
+  peaks: readonly PeakWindow[],
+): number {
+  let cap = Number.POSITIVE_INFINITY;
+  for (const peak of peaks) {
+    const dodge = dodgeLimitMinutes(blocks, peak);
+    // Dienste, die länger sind als die Ausweichlücke, MÜSSEN ins Fenster
+    // ragen – egal, wohin man sie schiebt.
+    let unvermeidbar = 0;
+    for (const s of onDay) {
+      if (s.endMinutes - s.startMinutes > dodge) unvermeidbar++;
+    }
+    if (unvermeidbar >= peak.maxStaff) cap = Math.min(cap, dodge / 60);
+  }
+  return cap;
 }
 
 /**
@@ -533,15 +660,83 @@ function chooseTemplateType(
   return currentLateRatio < threshold ? "LATE" : "EARLY";
 }
 
+/**
+ * In welchen Öffnungsblock gehört ein Dienst dieser Länge?
+ *
+ * Früh sucht von vorn, Spät von hinten – und beide nehmen den ersten Block,
+ * der lang genug ist. Nötig, seit ein Tag MEHRERE Blöcke haben kann: Di–Fr ist
+ * von 15:00 bis 17:00 zu. Vorher wurde stumpf der Rahmen des ganzen Tages
+ * (11:30–22:00) benutzt, und eine 5-h-Frühschicht landete auf 11:30–16:30 –
+ * anderthalb Stunden davon bei geschlossenem Laden. Betroffen war gut ein
+ * Viertel aller Dienste.
+ *
+ * Gibt es keinen passenden Block, kommt der längste zurück; der Aufrufer hat
+ * die Länge dann schon vorher auf longestBlock begrenzt.
+ */
+function blockForShift(blocks: DayBlocks, presence: number, type: TemplateType): DayWindow {
+  const passend = blocks.filter((b) => b.endMinutes - b.startMinutes >= presence);
+  if (passend.length === 0) {
+    return blocks.reduce((a, b) =>
+      b.endMinutes - b.startMinutes > a.endMinutes - a.startMinutes ? b : a,
+    );
+  }
+  return type === "LATE" ? passend[passend.length - 1] : passend[0];
+}
+
+/**
+ * Ein Öffnungsblock, in dem eine Stoßzeit liegt und in dem noch NIEMAND steht.
+ *
+ * Nötig, weil der Mittagsblock Di–Fr nur 3,5 h lang ist: Dienste ab 4 h passen
+ * dort nicht hinein und wandern alle in den Abendblock. Ohne dieses Signal
+ * stand der Laden Di–Fr von 11:30 bis 15:00 leer – ausgerechnet in der Zeit,
+ * die die Chefin als die volle nennt. Vorher fiel das nicht auf, weil Dienste
+ * damals über die Mittagsschließung hinweg geplant wurden.
+ */
+function uncoveredPeakBlock(state: SchedulerState, isoDate: string): DayWindow | null {
+  const day = state.dayOf(isoDate);
+  if (day.closed) return null;
+  const peaks = state.peaksOf(isoDate);
+  if (peaks.length === 0) return null;
+
+  const imBlock = (block: DayWindow) =>
+    state.shifts.filter(
+      (sh) =>
+        sh.date === isoDate &&
+        sh.startMinutes >= block.startMinutes &&
+        sh.endMinutes <= block.endMinutes,
+    );
+
+  for (const block of day.blocks) {
+    for (const peak of peaks) {
+      if (peak.minStaff <= 0) continue;
+      const von = Math.max(peak.startMinutes, block.startMinutes);
+      const bis = Math.min(peak.endMinutes, block.endMinutes);
+      if (bis <= von) continue;
+
+      // Nicht nur "steht da überhaupt jemand", sondern "ist die Spanne
+      // LÜCKENLOS besetzt". Der Mittagsblock ist 3,5 h lang, ein Dienst aber
+      // höchstens 3 h (ganze Stunden) – eine einzelne Kraft lässt also immer
+      // eine halbe Stunde offen. Erst ein zweiter, versetzter Dienst schließt
+      // sie; das Anordnen übernimmt danach arrangeForPeaks.
+      if (minCoverageOver(imBlock(block), von, bis) < peak.minStaff) return block;
+    }
+  }
+  return null;
+}
+
 function makeShift(
   state: SchedulerState,
   employee: Employee,
   isoDate: string,
   paidMinutes: number,
+  /** Erzwingt einen bestimmten Öffnungsblock (siehe uncoveredPeakBlock). */
+  forceBlock?: DayWindow,
 ): Shift {
   const type = chooseTemplateType(state, isoDate, employee.employmentType);
-  const win = state.dayOf(isoDate).window;
-  const tpl = getShiftTemplate(paidMinutes / 60, type, win.startMinutes, win.endMinutes);
+  const block =
+    forceBlock ??
+    blockForShift(state.dayOf(isoDate).blocks, presenceFromPaid(paidMinutes), type);
+  const tpl = getShiftTemplate(paidMinutes / 60, type, block.startMinutes, block.endMinutes);
   return {
     id: nextShiftId(),
     employeeId: employee.id,
@@ -611,12 +806,26 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
 
   let bestDate: string | null = null;
   let bestHours = 0;
+  let bestBlock: DayWindow | undefined;
   let bestScore = Number.NEGATIVE_INFINITY;
 
   for (const isoDate of state.dates) {
     if (worked.has(isoDate)) continue; // max. ein Dienst pro Tag
     const day = state.dayOf(isoDate);
     if (day.closed) continue; // Betriebsruhe -> kein Dienst
+
+    // ── Sonderregeln für den Chef ──────────────────────────────────────────
+    // Er arbeitet mit, aber nach eigenem Rhythmus: fünf Tage die Woche, und
+    // samstags ist er nicht im Laden. Beides sind harte Regeln wie die
+    // Sechs-Tage-Regel – ein Tag, der sie bricht, wird gar nicht erst geprüft.
+    if (employee.isOwner) {
+      if (weekdayKeyOf(parseIsoDate(isoDate)) === OWNER_FREE_WEEKDAY) continue;
+      let inWeek = 0;
+      const weekStart = weekStartOf(isoDate);
+      for (const d of worked) if (weekStartOf(d) === weekStart) inWeek++;
+      if (inWeek >= OWNER_DAYS_PER_WEEK) continue;
+    }
+
 
     const dsNow = state.dateState.get(isoDate)!;
     const wanted = coverSize(state, isoDate); // wie viele Leute der Tag braucht
@@ -654,21 +863,70 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     // zuerst einen 9-h-Dienst. Bei 26 Tagen sind das 234 h allein dafür – bei
     // 317 h Gesamtsoll bleibt für die zweite Person kaum etwas übrig, und eine
     // Teilzeitkraft mit 55 h ist nach sechs Diensten durch.
-    const coverHours = cheapestPeakCover(day.window).reduce((sum, h) => sum + h, 0);
+    // Steht in einem Öffnungsblock noch niemand, hat dieser Dienst dort mehr
+    // Wert als irgendwo sonst – auch wenn er dafür kürzer ausfallen muss.
+    // Di–Fr betrifft das den Mittagsblock: er ist 3,5 h lang, also passt nur
+    // ein 3-h-Dienst hinein, während alle längeren in den Abend wandern.
+    const leererBlock = uncoveredPeakBlock(state, isoDate);
+    const blockStunden = leererBlock
+      ? Math.floor((leererBlock.endMinutes - leererBlock.startMinutes) / 60)
+      : 0;
+    // Wie überall gilt: der Deckel darf das eigene Tempo nicht unterlaufen.
+    // Eine Kraft mit 150 h im Monat braucht rund 6 h am Tag; schickt man sie
+    // in den 3-h-Mittagsblock, verbrennt sie einen ihrer wenigen möglichen
+    // Tage und das Monats-Soll geht am Ende nicht auf. Den Mittag füllt, wer
+    // es sich leisten kann – die Kräfte mit kleinem Soll.
+    const fuellDenBlock =
+      leererBlock !== null &&
+      blockStunden >= 3 &&
+      blockStunden < maxHours &&
+      blockStunden >= needHours;
+    if (fuellDenBlock) maxHours = blockStunden;
+
+    // Deckel aus der Stoßzeit-Obergrenze (siehe peakLengthCapHours).
+    const peakCap = peakLengthCapHours(
+      day.blocks,
+      state.shifts.filter((s) => s.date === isoDate),
+      state.peaksOf(isoDate),
+    );
+
+    const coverHours = cheapestPeakCover(day.blocks, state.peaksOf(isoDate)).reduce((sum, h) => sum + h, 0);
     const dayTargetHours = state.rawTarget.get(isoDate)! / 60;
     const affordsCover = coverHours > 0 && dayTargetHours >= coverHours - 0.5;
     const stillNeedsLong = affordsCover
       ? Math.min(missingCoverHours(state, isoDate), maxHours)
       : 0;
 
-    const hours = chooseShiftHours(
-      remaining,
-      maxHours,
-      employee.employmentType,
-      stillNeedsLong > 0 ? Math.max(needHours, stillNeedsLong) : needHours,
-      state.varyLengths ? state.rng : undefined,
-      stillNeedsLong,
-    );
+    const laenge = (cap: number) =>
+      cap < 3
+        ? 0
+        : chooseShiftHours(
+            remaining,
+            cap,
+            employee.employmentType,
+            stillNeedsLong > 0 ? Math.max(needHours, stillNeedsLong) : needHours,
+            state.varyLengths ? state.rng : undefined,
+            stillNeedsLong,
+          );
+
+    // Erst die Länge suchen, die unter der Stoßzeit-Obergrenze bleibt.
+    const capBeisst = Number.isFinite(peakCap) && peakCap < maxHours;
+    let hours = laenge(Math.min(maxHours, Math.floor(peakCap)));
+    // Der Deckel darf das eigene Tempo nicht unterlaufen: sonst verbrät eine
+    // Kraft mit hohem Soll ihre wenigen möglichen Tage an 4-h-Diensten und
+    // steht am Monatsende mit offenen Stunden da. Dann lieber diesen Tag
+    // auslassen und woanders suchen.
+    if (capBeisst && hours > 0 && hours < needHours) hours = 0;
+    let peakPenalty = 0;
+    if (hours === 0) {
+      // Nichts passt darunter. Der Deckel ist hier bewusst KEIN K.o.: sonst
+      // bleibt am Monatsende ein Rest Sollstunden liegen und es entsteht gar
+      // kein Plan. Ein Tag mit einer Person zu viel ist besser als kein Plan –
+      // er wird in der Auswertung als Abweichung ausgewiesen. Die Strafe sorgt
+      // dafür, dass das die allerletzte Wahl bleibt.
+      hours = laenge(maxHours);
+      if (Number.isFinite(peakCap)) peakPenalty = 60;
+    }
     if (hours === 0) continue; // hier passt keine gültige Schicht
 
     // Harte Regel. Früher gab es hier einen Ausweichtag, der diese Prüfung
@@ -698,11 +956,17 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
 
     const jitter = state.rng() * 0.01; // deterministisch (seeded), nur Tie-Break
 
+    // Kräftig genug, um den Tag gegen einen anderen mit mehr offenen Stunden
+    // zu gewinnen: ein leerer Block heißt offener Laden ohne Personal.
+    const blockBonus = fuellDenBlock ? 25 : 0;
+
     const score =
       deficitHours * 10 +
       staffingBonus +
+      blockBonus +
       dayWeight * 3 -
       shapePenalty -
+      peakPenalty -
       consecutivePenalty -
       weekendPenalty +
       jitter;
@@ -711,12 +975,13 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
       bestScore = score;
       bestDate = isoDate;
       bestHours = hours;
+      bestBlock = fuellDenBlock ? leererBlock! : undefined;
     }
   }
 
   if (bestDate === null || bestHours === 0) return false;
 
-  const shift = makeShift(state, employee, bestDate, bestHours * 60);
+  const shift = makeShift(state, employee, bestDate, bestHours * 60, bestBlock);
   applyShift(state, shift);
   state.remaining.set(employee.id, remaining - shift.paidMinutes);
   return true;
@@ -740,6 +1005,31 @@ function dateCost(state: SchedulerState, isoDate: string): number {
   return Math.abs(
     state.dateState.get(isoDate)!.totalPaid - state.rawTarget.get(isoDate)!,
   );
+}
+
+/**
+ * Darf diese Person an diesem Tag arbeiten? Für alle außer dem Chef: ja.
+ *
+ * Der Chef arbeitet fünf Tage die Woche und samstags nicht. placeOneShift
+ * beachtet das seit jeher – die REPARATURLÄUFE aber nicht: sie verschieben und
+ * tauschen Termine und haben den Chef dabei prompt auf Samstage und in
+ * Sechs-Tage-Wochen gesetzt. Deshalb steht die Regel jetzt an einer Stelle,
+ * durch die jeder dieser Wege muss.
+ *
+ * `statt` ist der Tag, den die Person im selben Zug abgibt – er zählt bei der
+ * Wochenrechnung nicht mehr mit.
+ */
+function ownerDayOk(state: SchedulerState, employeeId: string, isoDate: string, statt?: string): boolean {
+  if (!state.owners.has(employeeId)) return true;
+  if (weekdayKeyOf(parseIsoDate(isoDate)) === OWNER_FREE_WEEKDAY) return false;
+
+  const woche = weekStartOf(isoDate);
+  let inWoche = 0;
+  for (const d of state.worked.get(employeeId)!) {
+    if (d === statt) continue;
+    if (weekStartOf(d) === woche) inWoche++;
+  }
+  return inWoche < OWNER_DAYS_PER_WEEK;
 }
 
 function removeShift(state: SchedulerState, shift: Shift): void {
@@ -786,6 +1076,7 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
       const presence = presenceFromPaid(shift.paidMinutes);
       for (const to of state.dates) {
         if (to === from || worked.has(to)) continue;
+        if (!ownerDayOk(state, employee.id, to, from)) continue;
         const day = state.dayOf(to);
         if (day.closed || windowLength(day) < presence) continue; // geschlossen / passt nicht
         // 6-Tage-Regel prüfen, als ob "from" bereits entfernt wäre.
@@ -884,6 +1175,10 @@ function canSwap(state: SchedulerState, a: Shift, b: Shift, allowSameEmployee = 
     trialB.delete(b.date);
     if (consecutiveRunLengthWith(trialB, a.date) > 6) return false;
   }
+
+  // Für den Chef gelten eigene Regeln – auch beim Tausch.
+  if (!ownerDayOk(state, a.employeeId, b.date, a.date)) return false;
+  if (!ownerDayOk(state, b.employeeId, a.date, b.date)) return false;
 
   // Die getauschten Längen müssen in das jeweilige Fenster passen.
   if (windowLength(state.dayOf(a.date)) < presenceFromPaid(b.paidMinutes)) return false;
@@ -997,6 +1292,12 @@ function trySwaps(state: SchedulerState, employeesById: Map<string, Employee>): 
       // Harte Regel: höchstens ein Dienst pro Mitarbeiter und Tag.
       if (workedA.has(b.date) || workedB.has(a.date)) continue;
 
+      // Und die Sonderregeln des Chefs (kein Samstag, fünf Tage die Woche).
+      // Diese Funktion prüft alles selbst, statt canSwap zu rufen – die
+      // Owner-Regel darf hier deshalb nicht fehlen.
+      if (!ownerDayOk(state, empA.id, b.date, a.date)) continue;
+      if (!ownerDayOk(state, empB.id, a.date, b.date)) continue;
+
       // Die getauschten Längen müssen in das jeweilige Fenster passen.
       const dayA = state.dayOf(a.date);
       const dayB = state.dayOf(b.date);
@@ -1068,8 +1369,17 @@ function trySwaps(state: SchedulerState, employeesById: Map<string, Employee>): 
 /** Dreht NUR Früh/Spät um. Dauer bleibt gleich => Monats-Soll bleibt exakt. */
 function retypeShift(state: SchedulerState, shift: Shift, type: TemplateType): void {
   if (shift.shiftType === type) return;
-  const win = state.dayOf(shift.date).window;
-  const tpl = getShiftTemplate(shift.paidMinutes / 60, type, win.startMinutes, win.endMinutes);
+  const block = blockForShift(
+    state.dayOf(shift.date).blocks,
+    presenceFromPaid(shift.paidMinutes),
+    type,
+  );
+  const tpl = getShiftTemplate(
+    shift.paidMinutes / 60,
+    type,
+    block.startMinutes,
+    block.endMinutes,
+  );
   const ds = state.dateState.get(shift.date)!;
 
   if (shift.shiftType === "LATE") ds.latePaid -= shift.paidMinutes;
@@ -1078,6 +1388,116 @@ function retypeShift(state: SchedulerState, shift: Shift, type: TemplateType): v
   shift.pauseMinutes = tpl.pauseMinutes;
   shift.shiftType = tpl.type;
   if (tpl.type === "LATE") ds.latePaid += shift.paidMinutes;
+}
+
+/**
+ * Wie viele Personen zu viel stünden in der Stoßzeit, wenn dieser Tag GENAU
+ * diese Schichtlängen hätte – plus die Lücken, die er dann nicht mehr decken
+ * könnte.
+ *
+ * Gezählt wird nach LÄNGE, nicht nach Uhrzeit: ein Dienst, der länger ist als
+ * die Lücke neben dem Fenster, ragt zwangsläufig hinein, egal wohin man ihn
+ * schiebt. Genau deshalb hilft Umsortieren an solchen Tagen nicht mehr.
+ *
+ * Die Funktion rechnet nur, sie ändert nichts. Das ist Absicht: so lässt sich
+ * ein Tausch bewerten, BEVOR er ausgeführt wird. Der frühere Ansatz – tauschen,
+ * messen, notfalls zurücktauschen – ist daran gescheitert, dass performSwap die
+ * alten Schicht-Objekte durch neue ersetzt; das Zurücktauschen griff dann ins
+ * Leere.
+ */
+function dayPeakScore(state: SchedulerState, isoDate: string, paidHours: number[]): number {
+  const day = state.dayOf(isoDate);
+  if (day.closed) return 0;
+
+  let score = 0;
+  for (const peak of state.peaksOf(isoDate)) {
+    const dodge = dodgeLimitMinutes(day.blocks, peak);
+    const drin = paidHours.filter((h) => presenceFromPaid(h * 60) > dodge).length;
+    score += Math.max(0, drin - peak.maxStaff);
+  }
+
+  const fehlt = coverSize(state, isoDate) - coverFilledFor(state, isoDate, paidHours);
+  return score + Math.max(0, Number.isFinite(fehlt) ? fehlt : 0);
+}
+
+/** Liste ohne EIN Vorkommen von wert (nicht ohne alle). */
+function ohneEins(werte: number[], wert: number): number[] {
+  const out = [...werte];
+  const i = out.indexOf(wert);
+  if (i >= 0) out.splice(i, 1);
+  return out;
+}
+
+/**
+ * Dritter Reparaturlauf: Tage, an denen zu VIELE Leute in der Stoßzeit stehen.
+ *
+ * repairPeakCapacity kümmert sich um das Gegenteil (zu wenige). Beides über
+ * einen Kamm zu scheren ginge nicht: dort wird ein kurzer Dienst gegen einen
+ * langen getauscht, hier genau andersherum.
+ *
+ * Getauscht werden nur DATEN, die Dauer bleibt bei der Person – das Monats-Soll
+ * bleibt also unangetastet. Ein Tausch wird nur ausgeführt, wenn er die Summe
+ * beider betroffener Tage verbessert; einen Tag zu heilen und dafür den anderen
+ * zu zerlegen bringt nichts.
+ */
+function repairPeakExcess(state: SchedulerState, employeesById: Map<string, Employee>): void {
+  const MAX_PASSES = 4;
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let improved = false;
+
+    for (const isoDate of state.dates) {
+      const day = state.dayOf(isoDate);
+      if (day.closed) continue;
+      if (dayPeakScore(state, isoDate, dayPaidHours(state, isoDate)) === 0) continue;
+
+      // Kleinste Ausweichlücke des Tages: darunter passt ein Dienst neben jede
+      // Stoßzeit dieses Tages.
+      let dodge = Number.POSITIVE_INFINITY;
+      for (const peak of state.peaksOf(isoDate)) {
+        dodge = Math.min(dodge, dodgeLimitMinutes(day.blocks, peak));
+      }
+      if (!Number.isFinite(dodge)) continue;
+
+      // Die kürzesten der zu langen Dienste zuerst hergeben: für die findet
+      // sich am ehesten ein Tauschpartner.
+      const zuLang = state.shifts
+        .filter((s) => s.date === isoDate && s.endMinutes - s.startMinutes > dodge)
+        .sort((x, y) => x.paidMinutes - y.paidMinutes);
+
+      for (const lang of zuLang) {
+        const hierJetzt = dayPaidHours(state, isoDate);
+        if (dayPeakScore(state, isoDate, hierJetzt) === 0) break;
+        if (!state.shifts.includes(lang)) continue; // schon weggetauscht
+
+        const kurz = state.shifts
+          .filter((s) => s.date !== isoDate && presenceFromPaid(s.paidMinutes) <= dodge)
+          .sort((x, y) => y.paidMinutes - x.paidMinutes); // größter Rest zuerst
+
+        for (const partner of kurz) {
+          if (!canSwap(state, lang, partner, true)) continue;
+
+          const dortJetzt = dayPaidHours(state, partner.date);
+          const langH = lang.paidMinutes / 60;
+          const kurzH = partner.paidMinutes / 60;
+
+          const vorher =
+            dayPeakScore(state, isoDate, hierJetzt) +
+            dayPeakScore(state, partner.date, dortJetzt);
+          const nachher =
+            dayPeakScore(state, isoDate, [...ohneEins(hierJetzt, langH), kurzH]) +
+            dayPeakScore(state, partner.date, [...ohneEins(dortJetzt, kurzH), langH]);
+
+          if (nachher >= vorher) continue;
+
+          performSwap(state, lang, partner, employeesById);
+          improved = true;
+          break;
+        }
+      }
+    }
+
+    if (!improved) break;
+  }
 }
 
 /**
@@ -1154,7 +1574,7 @@ function balanceShiftTypes(state: SchedulerState): void {
     const hasCloser = () => onDay.some((s) => s.endMinutes === day.window.endMinutes);
 
     for (let guard = 0; guard < onDay.length * 3; guard++) {
-      const deficit = peakDeficit(onDay, day.window);
+      const deficit = peakDeficit(onDay, day.window, state.peaksOf(isoDate));
       if (deficit === 0) break;
 
       let best: Shift | null = null;
@@ -1167,7 +1587,7 @@ function balanceShiftTypes(state: SchedulerState): void {
         retypeShift(state, s, target);
         // Öffnen/Schließen darf die Spitzenreparatur nicht kaputt machen.
         const ok = hasOpener() && hasCloser();
-        const next = ok ? peakDeficit(onDay, day.window) : Number.POSITIVE_INFINITY;
+        const next = ok ? peakDeficit(onDay, day.window, state.peaksOf(isoDate)) : Number.POSITIVE_INFINITY;
         retypeShift(state, s, back);
         if (next < bestDeficit) {
           bestDeficit = next;
@@ -1180,7 +1600,7 @@ function balanceShiftTypes(state: SchedulerState): void {
     }
 
     // 4. Reicht Drehen nicht, die Dienste im Fenster neu ANORDNEN.
-    layoutDayForPeaks(day.window, onDay);
+    layoutDayForPeaks(day.blocks, onDay, state.peaksOf(isoDate));
   }
 }
 
@@ -1194,24 +1614,39 @@ function moveShiftTo(shift: Shift, startMinutes: number): void {
 /**
  * Startzeiten, an denen ein Dienst überhaupt etwas Nützliches beiträgt:
  * aufsperren, zusperren, oder eine Stoßzeit vollständig abdecken.
+ *
+ * Der Dienst muss dabei KOMPLETT in einen Block passen. Über eine
+ * Mittagsschließung hinweg gibt es keine Schicht – deshalb wird jeder Block
+ * einzeln durchgerechnet.
  */
-function candidateStarts(shift: Shift, window: DayWindow): number[] {
+function candidateStarts(
+  shift: Shift,
+  blocks: DayBlocks,
+  peaks: readonly PeakWindow[],
+): number[] {
   const presence = shift.endMinutes - shift.startMinutes;
-  const latest = window.endMinutes - presence;
-  if (latest < window.startMinutes) return [window.startMinutes];
+  const out = new Set<number>();
 
-  const out = new Set<number>([window.startMinutes, latest]);
-  for (const peak of PEAK_WINDOWS) {
-    const from = Math.max(peak.startMinutes, window.startMinutes);
-    const to = Math.min(peak.endMinutes, window.endMinutes);
-    if (to <= from || presence < to - from) continue;
-    const lo = Math.max(window.startMinutes, to - presence);
-    const hi = Math.min(from, latest);
-    if (lo <= hi) {
-      out.add(lo);
-      out.add(hi);
+  for (const block of blocks) {
+    const latest = block.endMinutes - presence;
+    if (latest < block.startMinutes) continue; // passt nicht in diesen Block
+
+    out.add(block.startMinutes); // am Blockanfang
+    out.add(latest); // am Blockende
+
+    for (const peak of peaks) {
+      const from = Math.max(peak.startMinutes, block.startMinutes);
+      const to = Math.min(peak.endMinutes, block.endMinutes);
+      if (to <= from || presence < to - from) continue;
+      const lo = Math.max(block.startMinutes, to - presence);
+      const hi = Math.min(from, latest);
+      if (lo <= hi) {
+        out.add(lo);
+        out.add(hi);
+      }
     }
   }
+
   return [...out].sort((a, b) => a - b);
 }
 
@@ -1230,10 +1665,10 @@ function candidateStarts(shift: Shift, window: DayWindow): number[] {
  * Deshalb: Auf- und Zusperrer werden zuerst festgelegt (alle Paare werden
  * durchprobiert), der Rest wird danach frei eingeplant.
  */
-function layoutDayForPeaks(window: DayWindow, onDay: Shift[]): void {
+function layoutDayForPeaks(blocks: DayBlocks, onDay: Shift[], peaks: readonly PeakWindow[]): void {
   if (onDay.length < 2) return;
-  if (peakDeficit(onDay, window) === 0) return; // schon gut
-  arrangeForPeaks(window, onDay);
+  if (peakDeficit(onDay, frameOf(blocks), peaks) === 0) return; // schon gut
+  arrangeForPeaks(blocks, onDay, peaks);
 }
 
 /**
@@ -1241,18 +1676,23 @@ function layoutDayForPeaks(window: DayWindow, onDay: Shift[]): void {
  * Kapazitätsrechnung benutzt, die wissen muss, ob eine Kombination von
  * Schichtlängen überhaupt aufgehen KANN.
  */
-function arrangeForPeaks(window: DayWindow, onDay: Shift[]): void {
+function arrangeForPeaks(blocks: DayBlocks, onDay: Shift[], peaks: readonly PeakWindow[]): void {
   if (onDay.length < 2) return;
+
+  const frame = frameOf(blocks);
+  const first = blocks[0];
+  const last = blocks[blocks.length - 1];
 
   const starts = onDay.map((s) => s.startMinutes);
   const restore = (list: number[]) => onDay.forEach((s, i) => moveShiftTo(s, list[i]));
+  // Aufsperren = Anfang des ERSTEN Blocks, Zusperren = Ende des LETZTEN.
   const opensAndCloses = () =>
-    onDay.some((s) => s.startMinutes === window.startMinutes) &&
-    onDay.some((s) => s.endMinutes === window.endMinutes);
+    onDay.some((s) => s.startMinutes === first.startMinutes) &&
+    onDay.some((s) => s.endMinutes === last.endMinutes);
 
   let bestStarts = [...starts];
   // Eine Ausgangslage ohne Auf- oder Zusperrer zählt nicht als Lösung.
-  let bestDeficit = opensAndCloses() ? peakDeficit(onDay, window) : Number.POSITIVE_INFINITY;
+  let bestDeficit = opensAndCloses() ? peakDeficit(onDay, frame, peaks) : Number.POSITIVE_INFINITY;
 
   for (let i = 0; i < onDay.length && bestDeficit > 0; i++) {
     // i === j ist ausdrücklich erlaubt: ein Dienst, der das ganze Fenster
@@ -1264,9 +1704,15 @@ function arrangeForPeaks(window: DayWindow, onDay: Shift[]): void {
       restore(starts);
 
       // i sperrt auf, j sperrt zu.
-      const closerStart = window.endMinutes - (onDay[j].endMinutes - onDay[j].startMinutes);
-      if (closerStart < window.startMinutes) continue;
-      moveShiftTo(onDay[i], window.startMinutes);
+      const closerStart = last.endMinutes - (onDay[j].endMinutes - onDay[j].startMinutes);
+      if (closerStart < last.startMinutes) continue; // müsste über die Schließung hinweg
+      // Dasselbe am anderen Ende: wer aufsperrt, muss in den ersten Block
+      // passen. Di–Fr ist der nur 3,5 h lang, ein längerer Dienst ragte sonst
+      // in die Mittagsschließung.
+      if (onDay[i].endMinutes - onDay[i].startMinutes > first.endMinutes - first.startMinutes) {
+        continue;
+      }
+      moveShiftTo(onDay[i], first.startMinutes);
       moveShiftTo(onDay[j], closerStart);
 
       // Alle übrigen Dienste greedy dorthin, wo sie am meisten helfen.
@@ -1274,9 +1720,9 @@ function arrangeForPeaks(window: DayWindow, onDay: Shift[]): void {
         if (k === i || k === j) continue;
         let pick = onDay[k].startMinutes;
         let pickDeficit = Number.POSITIVE_INFINITY;
-        for (const c of candidateStarts(onDay[k], window)) {
+        for (const c of candidateStarts(onDay[k], blocks, peaks)) {
           moveShiftTo(onDay[k], c);
-          const d = peakDeficit(onDay, window);
+          const d = peakDeficit(onDay, frame, peaks);
           if (d < pickDeficit) {
             pickDeficit = d;
             pick = c;
@@ -1285,7 +1731,7 @@ function arrangeForPeaks(window: DayWindow, onDay: Shift[]): void {
         moveShiftTo(onDay[k], pick);
       }
 
-      const deficit = peakDeficit(onDay, window);
+      const deficit = peakDeficit(onDay, frame, peaks);
       if (deficit < bestDeficit) {
         bestDeficit = deficit;
         bestStarts = onDay.map((s) => s.startMinutes);
@@ -1418,7 +1864,7 @@ export function generateSchedule(input: GenerateInput): Shift[] {
   const floors = new Map<string, number>();
   let totalFloor = 0;
   for (const d of dates) {
-    const f = peakFloorMinutes(dayOf(d));
+    const f = peakFloorMinutes(dayOf(d), PEAK_WINDOWS_BY_WEEKDAY[effKeyOf(d)]);
     floors.set(d, f);
     totalFloor += f;
   }
@@ -1466,11 +1912,13 @@ export function generateSchedule(input: GenerateInput): Shift[] {
       rawTarget,
       dateState: new Map(dates.map((d) => [d, { totalPaid: 0, latePaid: 0, count: 0 }])),
       worked: new Map(employees.map((e) => [e.id, new Set<string>()])),
+      owners: new Set(employees.filter((e) => e.isOwner).map((e) => e.id)),
       weekendCount: new Map(employees.map((e) => [e.id, 0])),
       remaining: new Map(employees.map((e) => [e.id, e.targetMinutes])),
       shifts: [],
       effKeyOf,
       dayOf,
+      peaksOf: (isoDate: string) => PEAK_WINDOWS_BY_WEEKDAY[effKeyOf(isoDate)],
       rng: seededRandom(seed + salt),
       varyLengths,
     };
@@ -1510,6 +1958,8 @@ export function generateSchedule(input: GenerateInput): Shift[] {
   repairDemand(state, employeesById);
   // Erst danach: die Stundenbilanz steht, jetzt die Form für die Stoßzeit.
   repairPeakCapacity(state, employeesById);
+  // ... und der umgekehrte Fall: zu viele Leute in der Stoßzeit.
+  repairPeakExcess(state, employeesById);
   balanceShiftTypes(state);
 
   // Stabil sortieren: nach Datum, dann Startzeit, dann Mitarbeiter.

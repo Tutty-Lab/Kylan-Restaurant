@@ -2,13 +2,7 @@
 // Validierung des Dienstplans gegen alle geforderten Regeln.
 // ============================================================================
 
-import {
-  MAX_MINIJOB_EMPLOYEES,
-  MAX_STAMM_EMPLOYEES,
-  MINIJOB_MAX_MONTHLY_HOURS,
-  type Employee,
-  type Shift,
-} from "../types";
+import type { Employee, Shift } from "../types";
 import { calculatePause } from "./time";
 import { maxConsecutiveRun } from "./consecutive";
 
@@ -42,33 +36,9 @@ export function validateSchedule(
 ): ValidationResult {
   const errors: ValidationError[] = [];
 
-  // ── Vorgaben des Betriebs zur Belegschaft ─────────────────────────────────
-  // Diese Regeln haengen nicht am Plan, sondern an der Mitarbeiterliste. Sie
-  // stehen trotzdem hier, damit ein Verstoss nicht erst beim Lohnbuero auffaellt.
-  const stammCount = employees.filter((e) => e.employmentType !== "MINIJOB").length;
-  const minijobCount = employees.length - stammCount;
-
-  if (stammCount > MAX_STAMM_EMPLOYEES) {
-    errors.push({
-      message: `Quá số thợ chính: ${stammCount} người, tối đa ${MAX_STAMM_EMPLOYEES}.`,
-    });
-  }
-  if (minijobCount > MAX_MINIJOB_EMPLOYEES) {
-    errors.push({
-      message: `Quá số Minijob: ${minijobCount} người, tối đa ${MAX_MINIJOB_EMPLOYEES}.`,
-    });
-  }
-  for (const emp of employees) {
-    if (emp.employmentType !== "MINIJOB") continue;
-    const hours = emp.targetMinutes / 60;
-    if (hours > MINIJOB_MAX_MONTHLY_HOURS) {
-      errors.push({
-        employeeId: emp.id,
-        message:
-          `${emp.name}: Minijob ${hours}h/tháng vượt ${MINIJOB_MAX_MONTHLY_HOURS}h theo hợp đồng.`,
-      });
-    }
-  }
+  // Für Kylan gibt es bewusst KEINE Zahlengrenzen bei der Belegschaft –
+  // weder für die Anzahl der Beschäftigten noch eine eigene Stundendecke für
+  // Minijobs. Siehe Kommentar in types.ts.
   const shiftsByEmployee = new Map<string, Shift[]>();
   for (const emp of employees) shiftsByEmployee.set(emp.id, []);
   for (const shift of shifts) {

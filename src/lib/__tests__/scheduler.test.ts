@@ -14,14 +14,14 @@ describe("Scheduler – August 2026 Beispieldaten", () => {
     employees: SAMPLE_EMPLOYEES,
   });
 
-  it("verteilt insgesamt genau 623 bezahlte Stunden", () => {
+  it("verteilt insgesamt genau 571 bezahlte Stunden", () => {
     const totalMinutes = shifts.reduce((s, x) => s + x.paidMinutes, 0);
-    expect(totalMinutes).toBe(623 * 60);
+    expect(totalMinutes).toBe(571 * 60);
   });
 
   it("trifft jedes einzelne Mitarbeiter-Soll exakt", () => {
     const expected: Record<string, number> = {
-      VZ1: 172, TZ1: 150, TZ2: 86, TZ3: 86, TZ4: 86,
+      VZ1: 120, TZ1: 150, TZ2: 86, TZ3: 86, TZ4: 86,
       MJ1: 43,
     };
     for (const emp of SAMPLE_EMPLOYEES) {

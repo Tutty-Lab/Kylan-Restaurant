@@ -9,14 +9,24 @@ import { parseIsoDate, weekdayKeyOf, type WeekdayKey } from "./demand";
 
 export type DayWindow = { startMinutes: number; endMinutes: number };
 
+/**
+ * Ein Arbeitstag kann aus MEHREREN Blöcken bestehen.
+ *
+ * Kylan öffnet Di–Fr zweimal am Tag (11:30–15:00 und 17:00–22:00). Früher gab
+ * es je Wochentag nur ein Fenster; damit liess sich die Mittagsschliessung
+ * nicht abbilden und der Scheduler plante mitten hinein. Ein Dienst muss immer
+ * KOMPLETT in einen Block passen – über die Schliessung hinweg gibt es keine
+ * Schicht.
+ */
+export type DayBlocks = DayWindow[];
+
 export type WorkHoursConfig = {
-  perWeekday: Record<WeekdayKey, DayWindow>;
-  holiday: DayWindow;
+  perWeekday: Record<WeekdayKey, DayBlocks>;
+  holiday: DayBlocks;
   /**
    * Wochentage, an denen der Laden grundsätzlich geschlossen ist (kein Dienst).
-   * VietHaus hat KEINEN festen Ruhetag – alle Wochentage stehen auf false.
-   * Ein Datum-Override mit eigenen Zeiten kann
-   * einen einzelnen Tag trotzdem schließen oder anders belegen (z.B. Urlaub).
+   * Bei Kylan ist das der Montag. Ein Datum-Override mit eigenen Zeiten kann
+   * einen solchen Tag im Einzelfall trotzdem öffnen.
    */
   closedWeekdays: Record<WeekdayKey, boolean>;
 };
@@ -35,37 +45,52 @@ export type DateOverride = {
 
 export type OverrideMap = Record<string, DateOverride>;
 
-export type ResolvedDay = { closed: boolean; window: DayWindow };
+export type ResolvedDay = {
+  closed: boolean;
+  /** Die tatsächlichen Öffnungsblöcke, aufsteigend und ohne Überlappung. */
+  blocks: DayBlocks;
+  /** Äußerer Rahmen (erster Anfang bis letztes Ende) – für Anzeige und Summen. */
+  window: DayWindow;
+};
+
+/** Rahmen um eine Liste von Blöcken. Leere Liste => 0-Fenster. */
+export function frameOf(blocks: DayBlocks): DayWindow {
+  if (blocks.length === 0) return { startMinutes: 0, endMinutes: 0 };
+  return {
+    startMinutes: Math.min(...blocks.map((b) => b.startMinutes)),
+    endMinutes: Math.max(...blocks.map((b) => b.endMinutes)),
+  };
+}
+
+/** Längster einzelner Block – so lang darf eine Schicht höchstens sein. */
+export function longestBlock(blocks: DayBlocks): number {
+  let max = 0;
+  for (const b of blocks) max = Math.max(max, b.endMinutes - b.startMinutes);
+  return max;
+}
 
 const w = (start: number, end: number): DayWindow => ({ startMinutes: start, endMinutes: end });
 
-// Vorgaben des Chefs (Kylan Restaurant), Öffnungszeiten:
-//   Montag        geschlossen
-//   Dienstag–Freitag  11:30–15:00 UND 17:00–22:00   (zwei Blöcke!)
+// Vorgaben der Chefin (Kylan Restaurant), Arbeitszeit:
+//   Montag            geschlossen
+//   Dienstag–Freitag  11:30–15:00 UND 17:00–22:00  (zwei Blöcke)
 //   Samstag, Sonntag  13:00–22:00
 //   Feiertag          15:00–22:00
-//
-// ACHTUNG – bekannte Lücke: das Datenmodell kennt je Wochentag GENAU EIN
-// Zeitfenster (DayWindow = start + end). Die geteilte Öffnung Di–Fr lässt sich
-// damit nicht abbilden. Hier steht deshalb der äußere Rahmen 11:30–22:00, und
-// der Scheduler darf Dienste auch in die Mittagsschließung 15:00–17:00 legen –
-// das ist FALSCH und muss vor dem Echteinsatz behoben werden. Der saubere Weg
-// ist, DayWindow zu einer Liste von Fenstern zu erweitern.
-const WEEKDAY_MIDDAY = w(11 * 60 + 30, 22 * 60); // Rahmen Di–Fr (siehe oben)
-const WEEKEND = w(13 * 60, 22 * 60); // Sa + So durchgehend
-const HOLIDAY = w(15 * 60, 22 * 60); // Feiertag
+const MITTAGS_SPLIT: DayBlocks = [w(11 * 60 + 30, 15 * 60), w(17 * 60, 22 * 60)];
+const WEEKEND: DayBlocks = [w(13 * 60, 22 * 60)];
+const HOLIDAY: DayBlocks = [w(15 * 60, 22 * 60)];
 
 export const DEFAULT_WORK_HOURS: WorkHoursConfig = {
   perWeekday: {
-    monday: { ...WEEKDAY_MIDDAY }, // geschlossen, Fenster nur als Rückfall
-    tuesday: { ...WEEKDAY_MIDDAY },
-    wednesday: { ...WEEKDAY_MIDDAY },
-    thursday: { ...WEEKDAY_MIDDAY },
-    friday: { ...WEEKDAY_MIDDAY },
-    saturday: { ...WEEKEND },
-    sunday: { ...WEEKEND },
+    monday: MITTAGS_SPLIT.map((b) => ({ ...b })), // geschlossen, nur als Rückfall
+    tuesday: MITTAGS_SPLIT.map((b) => ({ ...b })),
+    wednesday: MITTAGS_SPLIT.map((b) => ({ ...b })),
+    thursday: MITTAGS_SPLIT.map((b) => ({ ...b })),
+    friday: MITTAGS_SPLIT.map((b) => ({ ...b })),
+    saturday: WEEKEND.map((b) => ({ ...b })),
+    sunday: WEEKEND.map((b) => ({ ...b })),
   },
-  holiday: { ...HOLIDAY },
+  holiday: HOLIDAY.map((b) => ({ ...b })),
   closedWeekdays: {
     monday: true, // Kylan: montags geschlossen
     tuesday: false,
@@ -86,20 +111,32 @@ export function effectiveWeekdayKey(isoDate: string, holidays: Set<string>): Wee
   return weekdayKeyOf(parseIsoDate(isoDate));
 }
 
-/** Arbeitszeit-Fenster für ein konkretes Datum (berücksichtigt Feiertage). */
-export function resolveWorkWindow(
+/** Öffnungsblöcke für ein konkretes Datum (berücksichtigt Feiertage). */
+export function resolveWorkBlocks(
   config: WorkHoursConfig,
   isoDate: string,
   holidays: Set<string>,
-): DayWindow {
+): DayBlocks {
   if (holidays.has(isoDate)) return config.holiday;
   return config.perWeekday[weekdayKeyOf(parseIsoDate(isoDate))];
 }
 
+const CLOSED: ResolvedDay = {
+  closed: true,
+  blocks: [],
+  window: { startMinutes: 0, endMinutes: 0 },
+};
+
+const open = (blocks: DayBlocks): ResolvedDay => ({
+  closed: false,
+  blocks: [...blocks].sort((a, b) => a.startMinutes - b.startMinutes),
+  window: frameOf(blocks),
+});
+
 /**
  * Vollständige Auflösung eines Tages inkl. Ausnahmen:
  * Ausnahme geschlossen > Ausnahme eigene Zeiten > geschlossener Wochentag
- * (z.B. Sonntag) > Feiertag > Wochentag.
+ * (z.B. Montag) > Feiertag > Wochentag.
  */
 export function resolveDay(
   config: WorkHoursConfig,
@@ -108,15 +145,13 @@ export function resolveDay(
   overrides: OverrideMap = {},
 ): ResolvedDay {
   const ov = overrides[isoDate];
-  if (ov?.closed) return { closed: true, window: { startMinutes: 0, endMinutes: 0 } };
+  if (ov?.closed) return CLOSED;
   // Ein Override mit eigenen Zeiten öffnet den Tag auch dann, wenn der
-  // Wochentag sonst geschlossen wäre (z.B. Sonderöffnung an einem Sonntag).
-  if (ov?.window) return { closed: false, window: ov.window };
+  // Wochentag sonst geschlossen wäre – dort gilt ein einzelner Block.
+  if (ov?.window) return open([ov.window]);
   const weekday = weekdayKeyOf(parseIsoDate(isoDate));
-  if (config.closedWeekdays?.[weekday]) {
-    return { closed: true, window: { startMinutes: 0, endMinutes: 0 } };
-  }
-  return { closed: false, window: resolveWorkWindow(config, isoDate, holidays) };
+  if (config.closedWeekdays?.[weekday]) return CLOSED;
+  return open(resolveWorkBlocks(config, isoDate, holidays));
 }
 
 /** Ist der Laden an diesem Datum geschlossen? (für die Anzeige in der UI). */
@@ -129,24 +164,39 @@ export function isDayClosed(
   return resolveDay(config, isoDate, holidays, overrides).closed;
 }
 
-/** Tiefe Kopie mit Auffüllen fehlender Felder (für Migration alter Speicherstände). */
+/** Ein einzelner Eintrag aus einem gespeicherten Stand als Blockliste. */
+function blocksFrom(value: unknown, fallback: DayBlocks): DayBlocks {
+  // Neuer Stand: bereits eine Liste.
+  if (Array.isArray(value)) {
+    const out = value.filter(
+      (b): b is DayWindow =>
+        !!b && typeof b.startMinutes === "number" && typeof b.endMinutes === "number",
+    );
+    if (out.length > 0) return out.map((b) => ({ ...b }));
+    return fallback.map((b) => ({ ...b }));
+  }
+  // Alter Stand: EIN Fenster als Objekt – wird zu einer Liste mit einem Block.
+  const one = value as DayWindow | undefined;
+  if (one && typeof one.startMinutes === "number" && typeof one.endMinutes === "number") {
+    return [{ startMinutes: one.startMinutes, endMinutes: one.endMinutes }];
+  }
+  return fallback.map((b) => ({ ...b }));
+}
+
+/**
+ * Tiefe Kopie mit Auffüllen fehlender Felder.
+ *
+ * Wandelt dabei alte Speicherstände mit genau EINEM Fenster je Wochentag in
+ * die Blockliste um. Ohne diesen Schritt käme aus der Datenbank ein Objekt,
+ * wo der Code eine Liste erwartet, und der Tag wäre lautlos ohne Öffnung.
+ */
 export function normalizeWorkHours(partial: Partial<WorkHoursConfig> | undefined): WorkHoursConfig {
   const base = DEFAULT_WORK_HOURS;
-  const perWeekday = { ...base.perWeekday };
-  if (partial?.perWeekday) {
-    for (const key of Object.keys(perWeekday) as WeekdayKey[]) {
-      const v = partial.perWeekday[key];
-      if (v && typeof v.startMinutes === "number" && typeof v.endMinutes === "number") {
-        perWeekday[key] = { startMinutes: v.startMinutes, endMinutes: v.endMinutes };
-      }
-    }
+  const perWeekday = {} as Record<WeekdayKey, DayBlocks>;
+  for (const key of Object.keys(base.perWeekday) as WeekdayKey[]) {
+    perWeekday[key] = blocksFrom(partial?.perWeekday?.[key], base.perWeekday[key]);
   }
-  const holiday =
-    partial?.holiday &&
-    typeof partial.holiday.startMinutes === "number" &&
-    typeof partial.holiday.endMinutes === "number"
-      ? { ...partial.holiday }
-      : { ...base.holiday };
+  const holiday = blocksFrom(partial?.holiday, base.holiday);
 
   const closedWeekdays = { ...base.closedWeekdays };
   if (partial?.closedWeekdays) {
