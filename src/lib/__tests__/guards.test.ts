@@ -51,11 +51,9 @@ describe("Zu viele Leute in der Stoßzeit", () => {
   // Test nur, ob der Scheduler heute zufällig einen schlechten Tag erwischt;
   // gemeint ist aber die Auswertung – ein Verstoß muss auffallen, egal woher
   // er kommt (auch aus einer Änderung von Hand im Dienstplan).
-  const employees = [
-    emp("a", "TEILZEIT", 9),
-    emp("b", "TEILZEIT", 9),
-    emp("c", "TEILZEIT", 9),
-  ];
+  // Sechs Personen – eine mehr, als die Spitze zulässt (maxStaff 5, den Chef
+  // mitgezählt). Bei fünf wäre alles in Ordnung.
+  const employees = ["a", "b", "c", "d", "e", "f"].map((id) => emp(id, "TEILZEIT", 9));
 
   // 2026-08-01 ist ein Samstag: offen 13-22 Uhr, Abendspitze 17-22 Uhr,
   // höchstens zwei Personen. Hier stehen drei, jeweils den ganzen Tag.
@@ -89,17 +87,17 @@ describe("Zu viele Leute in der Stoßzeit", () => {
     const abend = analysis.peakViolations
       .find((d) => d.date === "2026-08-01")!
       .peaks.find((p) => !p.ok)!;
-    expect(abend.maxStaff).toBe(3); // so viele stehen wirklich da
-    expect(abend.allowed).toBe(2); // so viele dürfen es sein
+    expect(abend.maxStaff).toBe(6); // so viele stehen wirklich da
+    expect(abend.allowed).toBe(5); // so viele dürfen es sein
   });
 
-  it("lässt zwei Personen im selben Fenster in Ruhe", () => {
+  it("lässt fünf Personen im selben Fenster in Ruhe", () => {
     const zwei = analyzeSchedule({
       year: 2026,
       month: 8,
       workHours: DEFAULT_WORK_HOURS,
-      employees: employees.slice(0, 2),
-      shifts: shifts.slice(0, 2),
+      employees: employees.slice(0, 5),
+      shifts: shifts.slice(0, 5),
     });
     // Nur dieser eine Tag zählt. Alle übrigen Tage des Monats stehen in
     // dieser Fixture ohne jede Schicht da und sind damit zu Recht als

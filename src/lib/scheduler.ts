@@ -28,7 +28,7 @@ import {
 import { getShiftTemplate, type TemplateType } from "./shifts";
 import { consecutiveRunLengthWith, seededRandom } from "./consecutive";
 import { weekStartOf } from "./weeks";
-import { OWNER_DAYS_PER_WEEK, OWNER_FREE_WEEKDAY } from "../types";
+import { OWNER_DAYS_PER_WEEK, OWNER_FREE_WEEKDAY, OWNER_MAX_SHIFT_HOURS } from "../types";
 import { presenceFromPaid } from "./time";
 import {
   effectiveWeekdayKey,
@@ -70,6 +70,8 @@ type SchedulerState = {
   worked: Map<string, Set<string>>; // employeeId -> Set<ISO>
   /** IDs der Chefs – für sie gelten eigene Regeln (siehe ownerDayOk). */
   owners: Set<string>;
+  /** Mitarbeiter nach id – für Spanne und Schichtlänge beim Tauschen. */
+  byId: Map<string, Employee>;
   weekendCount: Map<string, number>; // employeeId -> Anzahl Fr/Sa-Schichten
   remaining: Map<string, number>; // employeeId -> noch zu verplanende Minuten
   shifts: Shift[];
@@ -95,6 +97,25 @@ function windowLength(day: ResolvedDay): number {
   return day.closed ? 0 : longestBlock(day.blocks);
 }
 
+/**
+ * Wie lang ist der Tag FÜR DIESE PERSON? Für den Chef der ganze Rahmen, für
+ * alle anderen der längste einzelne Öffnungsblock (siehe
+ * OWNER_MAX_SHIFT_HOURS).
+ */
+function spanFor(day: ResolvedDay, employee?: Employee): number {
+  if (day.closed) return 0;
+  if (employee?.isOwner) {
+    const rahmen = frameOf(day.blocks);
+    return rahmen.endMinutes - rahmen.startMinutes;
+  }
+  return longestBlock(day.blocks);
+}
+
+/** Längste zulässige Schicht dieser Person in Stunden. */
+function maxHoursFor(employee?: Employee): number {
+  return employee?.isOwner ? OWNER_MAX_SHIFT_HOURS : MAX_SHIFT_HOURS;
+}
+
 
 let shiftIdCounter = 0;
 function nextShiftId(): string {
@@ -107,7 +128,9 @@ function isWeekend(isoDate: string): boolean {
   return key === "friday" || key === "saturday";
 }
 
-const SHIFT_HOURS_DESC = [9, 8, 7, 6, 5, 4, 3] as const;
+// 10 h steht drin, weil der Chef so lange arbeitet. Für alle anderen greift
+// maxHoursFor() und deckelt bei 9 – siehe OWNER_MAX_SHIFT_HOURS.
+const SHIFT_HOURS_DESC = [10, 9, 8, 7, 6, 5, 4, 3] as const;
 
 /** Längste zulässige Schicht in Stunden (bezahlt, ohne Pause). */
 const MAX_SHIFT_HOURS = 9;
@@ -127,7 +150,9 @@ const MIN_SHIFT_MINUTES = 3 * 60;
  * Abwechslung kostet hier Besetzung in der Stoßzeit.
  */
 const ALLOWED_HOURS: Record<Employee["employmentType"], readonly number[]> = {
-  VOLLZEIT: [4, 5, 6, 7, 8, 9],
+  // 10 h stehen hier nur für den Chef zur Verfügung – begrenzt wird das nicht
+  // hier, sondern über maxHoursFor(): für alle anderen bleibt bei 9 Schluss.
+  VOLLZEIT: [4, 5, 6, 7, 8, 9, 10],
   TEILZEIT: [3, 4, 5, 6, 7, 8, 9],
   // Minijob ist arbeitsrechtlich eine Form der Teilzeit – gleiche Längen.
   // Begrenzt wird er über das Monats-Soll, nicht über die Schichtlänge.
@@ -148,15 +173,17 @@ const SHORT_SHIFT_CHANCE = 0.1;
 const SHORT_SHIFT_HOURS: readonly number[] = [4, 5];
 
 /** Alle überhaupt zulässigen Längen – Rückfall, wenn das Fenster eng ist. */
-const ALL_HOURS: readonly number[] = [3, 4, 5, 6, 7, 8, 9];
+const ALL_HOURS: readonly number[] = [3, 4, 5, 6, 7, 8, 9, 10];
 
 // ── Stoßzeiten (peak windows) ───────────────────────────────────────────────
 // Vorgabe der Chefin (Kylan): die Spitze liegt NICHT jeden Tag gleich.
 //   Di–Fr  vormittags voll   -> 11:30–15:00
 //   Sa/So  abends voll       -> 17:00–22:00
-// In der Spitze dürfen HÖCHSTENS zwei Leute da sein – der Laden ist klein,
-// und der Chef zählt mit. Eine Untergrenze von zwei gibt es NICHT: gefordert
-// ist nur, dass überhaupt jemand da ist.
+// In der Spitze dürfen HÖCHSTENS FÜNF Leute da sein, den Chef mitgezählt.
+// Angabe des Betriebs: "wenn viel los ist höchstens 5, normal 3–4". Die 3–4
+// sind eine Beschreibung, keine Vorschrift – festgehalten wird nur die
+// Obergrenze. Eine Untergrenze von zwei gibt es NICHT: gefordert ist nur, dass
+// überhaupt jemand da ist.
 export type PeakWindow = {
   label: string;
   startMinutes: number;
@@ -172,7 +199,7 @@ const MITTAG: PeakWindow = {
   startMinutes: 11 * 60 + 30,
   endMinutes: 15 * 60,
   minStaff: 1,
-  maxStaff: 2,
+  maxStaff: 5,
 };
 
 const ABEND: PeakWindow = {
@@ -180,7 +207,7 @@ const ABEND: PeakWindow = {
   startMinutes: 17 * 60,
   endMinutes: 22 * 60,
   minStaff: 1,
-  maxStaff: 2,
+  maxStaff: 5,
 };
 
 /**
@@ -551,7 +578,9 @@ export function chooseShiftHours(
   peakHours = 0,
 ): number {
   const remainingHours = remainingMinutes / 60;
-  const cap = Math.min(MAX_SHIFT_HOURS, maxHours, remainingHours);
+  // maxHours bringt die Grenze der Person schon mit (9 h, für den Chef 10);
+  // ein zweiter Deckel auf MAX_SHIFT_HOURS würde ihn wieder auf 9 stutzen.
+  const cap = Math.min(maxHours, remainingHours);
   if (cap < 3) return 0;
 
   // Erlaubte Längen je Anstellungsart (Vorgabe des Chefs): Vollzeit macht keine
@@ -733,9 +762,12 @@ function makeShift(
   forceBlock?: DayWindow,
 ): Shift {
   const type = chooseTemplateType(state, isoDate, employee.employmentType);
+  const day = state.dayOf(isoDate);
   const block =
     forceBlock ??
-    blockForShift(state.dayOf(isoDate).blocks, presenceFromPaid(paidMinutes), type);
+    (employee.isOwner
+      ? frameOf(day.blocks) // durchgehend, auch über die Mittagsschließung
+      : blockForShift(day.blocks, presenceFromPaid(paidMinutes), type));
   const tpl = getShiftTemplate(paidMinutes / 60, type, block.startMinutes, block.endMinutes);
   return {
     id: nextShiftId(),
@@ -795,7 +827,7 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     if (trial.has(isoDate)) continue;
     const day = state.dayOf(isoDate);
     if (day.closed) continue;
-    if (maxShiftHoursForWindow(windowLength(day)) === 0) continue;
+    if (maxShiftHoursForWindow(spanFor(day, employee)) === 0) continue;
     if (consecutiveRunLengthWith(trial, isoDate) > 6) continue;
     trial.add(isoDate); // belegt – zählt für die Kette der folgenden Tage mit
     usableDays += 1;
@@ -832,7 +864,10 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     const bodiesMissing = Math.max(0, wanted - dsNow.count);
 
     // Längste Schicht, die ins Fenster passt UND den Rest exakt aufteilbar lässt.
-    let maxHours = maxShiftHoursForWindow(windowLength(day));
+    let maxHours = Math.min(
+      maxShiftHoursForWindow(spanFor(day, employee)),
+      maxHoursFor(employee),
+    );
 
     // Reichen die Stunden des Tages nicht für die volle Abdeckung, ist ZWEI
     // Personen wichtiger als eine lange. Vorher entstanden reihenweise Tage
@@ -877,6 +912,10 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     // Tage und das Monats-Soll geht am Ende nicht auf. Den Mittag füllt, wer
     // es sich leisten kann – die Kräfte mit kleinem Soll.
     const fuellDenBlock =
+      // Für den Chef nicht: sein Dienst läuft ohnehin über den ganzen Rahmen und
+      // deckt damit beide Blöcke ab. Ihn auf einen Block zu stutzen nähme ihm
+      // genau die Länge, für die es die Sonderregel gibt.
+      !employee.isOwner &&
       leererBlock !== null &&
       blockStunden >= 3 &&
       blockStunden < maxHours &&
@@ -1078,7 +1117,7 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
         if (to === from || worked.has(to)) continue;
         if (!ownerDayOk(state, employee.id, to, from)) continue;
         const day = state.dayOf(to);
-        if (day.closed || windowLength(day) < presence) continue; // geschlossen / passt nicht
+        if (day.closed || spanFor(day, employee) < presence) continue; // zu / passt nicht
         // 6-Tage-Regel prüfen, als ob "from" bereits entfernt wäre.
         const trial = new Set(worked);
         trial.delete(from);
@@ -1181,8 +1220,13 @@ function canSwap(state: SchedulerState, a: Shift, b: Shift, allowSameEmployee = 
   if (!ownerDayOk(state, b.employeeId, a.date, b.date)) return false;
 
   // Die getauschten Längen müssen in das jeweilige Fenster passen.
-  if (windowLength(state.dayOf(a.date)) < presenceFromPaid(b.paidMinutes)) return false;
-  if (windowLength(state.dayOf(b.date)) < presenceFromPaid(a.paidMinutes)) return false;
+  // Die Spanne richtet sich nach der Person, die den Dienst übernimmt.
+  if (spanFor(state.dayOf(a.date), state.byId.get(b.employeeId)) < presenceFromPaid(b.paidMinutes)) {
+    return false;
+  }
+  if (spanFor(state.dayOf(b.date), state.byId.get(a.employeeId)) < presenceFromPaid(a.paidMinutes)) {
+    return false;
+  }
 
   return true;
 }
@@ -1788,6 +1832,10 @@ function buildUnmetMessage(
   dayOf: (isoDate: string) => ResolvedDay,
 ): string {
   const full = monthCapacity(dates, dayOf, PREFERRED_HOURS.VOLLZEIT);
+  // Der Chef darf länger und über die Mittagsschließung hinweg – seine Decke
+  // liegt entsprechend höher, sonst nennt die Fehlermeldung eine Zahl, die für
+  // ihn gar nicht gilt.
+  const chef = monthCapacity(dates, dayOf, OWNER_MAX_SHIFT_HOURS);
 
   // Ein Soll unter der kürzesten Schicht ist ein EIGENER Fehlerfall. Vorher
   // fiel er in die Kapazitäts-Erklärung: Wer 2 h eintrug, bekam einen Vortrag
@@ -1812,7 +1860,7 @@ function buildUnmetMessage(
       if (e.targetMinutes < MIN_SHIFT_MINUTES) {
         return `${e.name} ${e.targetMinutes / 60}h (nhỏ hơn ca ngắn nhất ${MIN_SHIFT_MINUTES / 60}h)`;
       }
-      const capMin = full.maxMinutes;
+      const capMin = e.isOwner ? chef.maxMinutes : full.maxMinutes;
       const overCap = e.targetMinutes > capMin ? ` — vượt trần ${capMin / 60}h` : "";
       return `${e.name} chỉ xếp được ${done}h / ${e.targetMinutes / 60}h${overCap}`;
     })
@@ -1913,6 +1961,7 @@ export function generateSchedule(input: GenerateInput): Shift[] {
       dateState: new Map(dates.map((d) => [d, { totalPaid: 0, latePaid: 0, count: 0 }])),
       worked: new Map(employees.map((e) => [e.id, new Set<string>()])),
       owners: new Set(employees.filter((e) => e.isOwner).map((e) => e.id)),
+      byId: new Map(employees.map((e) => [e.id, e] as const)),
       weekendCount: new Map(employees.map((e) => [e.id, 0])),
       remaining: new Map(employees.map((e) => [e.id, e.targetMinutes])),
       shifts: [],

@@ -3,8 +3,12 @@ import { chooseShiftHours, maxShiftHoursForWindow } from "../scheduler";
 
 describe("maxShiftHoursForWindow", () => {
   it("rechnet mit Anwesenheit inkl. Pause, nicht mit bezahlter Zeit", () => {
-    // Ohne Pause ist Anwesenheit = bezahlte Zeit: 9h=540, 8h=480, ... 3h=180.
-    expect(maxShiftHoursForWindow(630)).toBe(9); // 11:30–22:00
+    // Ohne Pause ist Anwesenheit = bezahlte Zeit: 10h=600, 9h=540, ... 3h=180.
+    // Die 10 h gibt es nur für den Chef; wer sie nicht darf, wird über
+    // maxHoursFor() auf 9 gedeckelt (siehe OWNER_MAX_SHIFT_HOURS).
+    expect(maxShiftHoursForWindow(630)).toBe(10); // 11:30–22:00, ganzer Rahmen
+    expect(maxShiftHoursForWindow(600)).toBe(10); // exakt 10 h
+    expect(maxShiftHoursForWindow(599)).toBe(9);
     expect(maxShiftHoursForWindow(540)).toBe(9); // exakt 9 h
     expect(maxShiftHoursForWindow(539)).toBe(8);
     expect(maxShiftHoursForWindow(480)).toBe(8);

@@ -18,6 +18,9 @@ export type ShiftTemplate = {
 };
 
 /** Erlaubte Schichtlängen in Stunden (VietHaus: 3 h bis 9 h bezahlt). */
+// Bleibt bei 9: diese Liste treibt die Anzeige "wie viele Ca" und die
+// Zerlegung eines Solls. Die 10-Stunden-Schicht des Chefs ist eine Ausnahme
+// im Scheduler (SHIFT_HOURS_DESC), keine Länge, die allen offensteht.
 export const SHIFT_LENGTHS = [3, 4, 5, 6, 7, 8, 9] as const;
 
 const DEFAULT_OPEN = 10 * 60; // 10:00

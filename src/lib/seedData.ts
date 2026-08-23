@@ -49,7 +49,7 @@ export type SeedMonth = {
 
 /** Juni 2026 – die Besetzung laut Chefin. */
 const JUNE_2026: Employee[] = [
-  { ...makeEmployee("vz-1", "Chủ quán", "VOLLZEIT", 105), isOwner: true },
+  { ...makeEmployee("vz-1", "Thu Cúc Đinh (chủ quán)", "VOLLZEIT", 200), isOwner: true },
   makeEmployee("tz-1", "Teilzeit 1", "TEILZEIT", 150),
   makeEmployee("tz-2", "Teilzeit 2", "TEILZEIT", 86),
   makeEmployee("tz-3", "Teilzeit 3", "TEILZEIT", 86),
@@ -59,7 +59,7 @@ const JUNE_2026: Employee[] = [
 
 /** Juli 2026 – eine Teilzeitkraft im Urlaub. */
 const JULY_2026: Employee[] = [
-  { ...makeEmployee("vz-1", "Chủ quán", "VOLLZEIT", 105), isOwner: true },
+  { ...makeEmployee("vz-1", "Thu Cúc Đinh (chủ quán)", "VOLLZEIT", 200), isOwner: true },
   makeEmployee("tz-1", "Teilzeit 1", "TEILZEIT", 150),
   makeEmployee("tz-2", "Teilzeit 2", "TEILZEIT", 86),
   makeEmployee("tz-3", "Teilzeit 3", "TEILZEIT", 86),
@@ -68,7 +68,7 @@ const JULY_2026: Employee[] = [
 
 /** August 2026 – volle Besetzung. */
 const AUGUST_2026: Employee[] = [
-  { ...makeEmployee("vz-1", "Chủ quán", "VOLLZEIT", 105), isOwner: true },
+  { ...makeEmployee("vz-1", "Thu Cúc Đinh (chủ quán)", "VOLLZEIT", 200), isOwner: true },
   makeEmployee("tz-1", "Teilzeit 1", "TEILZEIT", 150),
   makeEmployee("tz-2", "Teilzeit 2", "TEILZEIT", 86),
   makeEmployee("tz-3", "Teilzeit 3", "TEILZEIT", 86),
@@ -93,9 +93,9 @@ const AUGUST_2026: Employee[] = [
 // geteilte Dienste (Mittag UND Abend am selben Tag) oder halbe Stunden als
 // Schichtlänge.
 export const SEED_MONTHS: SeedMonth[] = [
-  { year: 2026, month: 6, label: "Juni 2026", employees: JUNE_2026, maxPeakGaps: 8 },
-  { year: 2026, month: 7, label: "Juli 2026", employees: JULY_2026, maxPeakGaps: 3 },
-  { year: 2026, month: 8, label: "August 2026", employees: AUGUST_2026, maxPeakGaps: 3 },
+  { year: 2026, month: 6, label: "Juni 2026", employees: JUNE_2026, maxPeakGaps: 0 },
+  { year: 2026, month: 7, label: "Juli 2026", employees: JULY_2026, maxPeakGaps: 1 },
+  { year: 2026, month: 8, label: "August 2026", employees: AUGUST_2026, maxPeakGaps: 0 },
 ];
 
 

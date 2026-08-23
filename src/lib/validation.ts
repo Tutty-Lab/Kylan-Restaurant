@@ -2,7 +2,7 @@
 // Validierung des Dienstplans gegen alle geforderten Regeln.
 // ============================================================================
 
-import type { Employee, Shift } from "../types";
+import { OWNER_MAX_SHIFT_HOURS, type Employee, type Shift } from "../types";
 import { calculatePause } from "./time";
 import { maxConsecutiveRun } from "./consecutive";
 
@@ -27,7 +27,14 @@ export type ValidationResult = {
   summaries: EmployeeSummary[];
 };
 
+/**
+ * Höchste bezahlte Zeit an einem Tag. Der Chef darf 10 Stunden, alle anderen
+ * 9 – siehe OWNER_MAX_SHIFT_HOURS. Beide Werte liegen unter der Grenze des
+ * Arbeitszeitgesetzes (§ 3 ArbZG: bis zu 10 Stunden, wenn im Halbjahr auf 8
+ * ausgeglichen).
+ */
 const MAX_PAID_MINUTES = 9 * 60;
+const MAX_PAID_MINUTES_OWNER = OWNER_MAX_SHIFT_HOURS * 60;
 const MAX_CONSECUTIVE_DAYS = 6;
 
 export function validateSchedule(
@@ -35,6 +42,7 @@ export function validateSchedule(
   shifts: Shift[],
 ): ValidationResult {
   const errors: ValidationError[] = [];
+  const employeeById = new Map(employees.map((e) => [e.id, e] as const));
 
   // Für Kylan gibt es bewusst KEINE Zahlengrenzen bei der Belegschaft –
   // weder für die Anzahl der Beschäftigten noch eine eigene Stundendecke für
@@ -61,11 +69,14 @@ export function validateSchedule(
         message: `Giờ ra không sau giờ vào (${shift.date}).`,
       });
     }
-    if (shift.paidMinutes > MAX_PAID_MINUTES) {
+    const paidLimit = employeeById.get(shift.employeeId)?.isOwner
+      ? MAX_PAID_MINUTES_OWNER
+      : MAX_PAID_MINUTES;
+    if (shift.paidMinutes > paidLimit) {
       errors.push({
         employeeId: shift.employeeId,
         date: shift.date,
-        message: `Quá 9 giờ công ngày ${shift.date}.`,
+        message: `Quá ${paidLimit / 60} giờ công ngày ${shift.date}.`,
       });
     }
     if (shift.paidMinutes !== expectedPaid) {

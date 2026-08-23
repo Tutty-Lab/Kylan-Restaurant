@@ -60,10 +60,12 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
     }
   });
 
-  it("jede Schicht ist 3..9 h lang mit passender Pause", () => {
+  it("jede Schicht ist 3..9 h lang (Chef 10) mit passender Pause", () => {
     for (const s of shifts) {
       expect(s.paidMinutes).toBeGreaterThanOrEqual(3 * 60);
-      expect(s.paidMinutes).toBeLessThanOrEqual(9 * 60);
+      // Der Chef darf 10 Stunden, alle anderen 9.
+      const chef = seed.employees.find((e) => e.id === s.employeeId)?.isOwner === true;
+      expect(s.paidMinutes).toBeLessThanOrEqual((chef ? 10 : 9) * 60);
       expect(s.pauseMinutes).toBe(calculatePause(s.paidMinutes));
       expect(s.endMinutes - s.startMinutes - s.pauseMinutes).toBe(s.paidMinutes);
     }
@@ -90,7 +92,7 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
     }
   });
 
-  it("legt jede Schicht KOMPLETT in einen Öffnungsblock", () => {
+  it("legt jede Schicht KOMPLETT in einen Öffnungsblock (außer beim Chef)", () => {
     // Di–Fr hat der Tag ZWEI Blöcke (11:30–15:00 und 17:00–22:00). Es reicht
     // deshalb nicht, Anfang und Ende gegen den Tagesrahmen zu prüfen: eine
     // 5-h-Frühschicht ab 11:30 endet um 16:30 und liegt damit anderthalb
@@ -98,7 +100,13 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
     // Viertel aller Dienste war betroffen, und keine der damaligen Prüfungen
     // hat es gemerkt.
     const holidays = publicHolidays(seed.year);
+    // Der Chef ist ausgenommen: sein Dienst läuft über die Mittagsschließung
+    // hinweg, für ihn zählt der ganze Rahmen als ein Stück. Ohne diese
+    // Ausnahme wären seine 200 h im Monat nicht unterzubringen – siehe
+    // OWNER_MAX_SHIFT_HOURS.
+    const chefIds = new Set(seed.employees.filter((e) => e.isOwner).map((e) => e.id));
     const draussen = shifts.filter((s) => {
+      if (chefIds.has(s.employeeId)) return false;
       const day = resolveDay(DEFAULT_WORK_HOURS, s.date, holidays, {});
       return !day.blocks.some(
         (b) => s.startMinutes >= b.startMinutes && s.endMinutes <= b.endMinutes,

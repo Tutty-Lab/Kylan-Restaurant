@@ -11,15 +11,17 @@ Dorotheenstraße 186, 22299 Hamburg. Abgeleitet aus der VietHaus-App
   ganzen Planung, siehe unten.
 - **Sa/So durchgehend** 13:00–22:00, **Feiertage** 15:00–22:00.
 - Voll wird es **Di–Fr vormittags** und **sonntags abends**. In diesen
-  Fenstern dürfen **höchstens 2 Personen** stehen – der Laden ist klein.
-  Der Chef zählt dabei ganz normal mit.
+  Fenstern dürfen **höchstens 5 Personen** stehen, den Chef mitgezählt.
+  Angabe des Betriebs: "wenn viel los ist höchstens 5, normal 3–4" – die 3–4
+  sind eine Beschreibung, keine Vorschrift.
 - **Keine Pause**: `calculatePause` gibt immer 0 zurück.
 - **Keine Ober- oder Untergrenze für die Anzahl der Beschäftigten** und keine
   eigene Stundendecke für Minijobs. Andere Filialen haben so etwas, weil deren
   Betrieb es ausdrücklich gesagt hat; hier wurde nur die heutige Besetzung
   genannt.
 - **Der Chef arbeitet mit** (Häkchen *Chủ quán* in der Mitarbeiterliste):
-  fünf Tage die Woche, **samstags nicht im Laden**. Seine Stunden zählen für
+  Thu Cúc Đinh, **200 h im Monat**, **10 Stunden am Tag**, fünf Tage die Woche,
+  **samstags nicht im Laden**. Seine Stunden zählen für
   den Betrieb wie die aller anderen.
 
 Belegschaft laut Angabe: 1 Vollzeit (172 h), 1 Teilzeit (150 h),
@@ -93,6 +95,11 @@ Maßgeblich ist immer der Code; die Doku-Tabellen in der App (Tab **Tài liệu*
 werden direkt aus den Konstanten gerendert und können daher nicht veralten.
 
 - Max. **9 bezahlte Stunden** pro Tag, **ein Dienst** pro Mitarbeiter und Tag.
+- **Der Chef ist die Ausnahme**: 10 Stunden am Tag (`OWNER_MAX_SHIFT_HOURS`),
+  und sein Dienst läuft über die Mittagsschließung hinweg – für ihn zählt der
+  ganze Rahmen 11:30–22:00 als ein Stück. Das ist die einzige Lesart, in der
+  seine 200 h im Monat aufgehen: bliebe er in EINEM Block, wären es
+  4 × 5 h + 9 h = 29 h die Woche und damit rund 126 h im Monat.
 - Höchstens **6 aufeinanderfolgende** Arbeitstage.
 - **Keine Pause** (`calculatePause` gibt 0 zurück) – so die Vorgabe der
   Chefin. Damit ist `presence = paid`, eine 9-h-Schicht belegt genau 9 h.
@@ -102,7 +109,7 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   wenn der Tag keinen langen Dienst mehr für die Stoßzeit braucht.
 - **Stoßzeiten** (`PEAK_WINDOWS_BY_WEEKDAY`, je Wochentag verschieden):
   Di–Fr der Mittagsblock 11:30–15:00, Sa/So der Abend 17:00–22:00. Dort sind
-  **höchstens 2 Personen** erlaubt und mindestens 1. Geprüft wird über die
+  **höchstens 5 Personen** erlaubt und mindestens 1. Geprüft wird über die
   **ganze Spanne**, nicht an einem einzelnen Zeitpunkt.
   - Die Obergrenze greift schon bei der **Wahl der Schichtlänge**
     (`peakLengthCapHours`), nicht erst beim Anordnen: ein 9-h-Dienst hat in

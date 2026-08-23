@@ -86,7 +86,10 @@ export function DocsTab() {
 
       <Section title="Nguyên tắc bắt buộc (luôn đúng)">
         <ul className="list-disc pl-5 space-y-1">
-          <li>Tối đa <b>9 giờ công</b> mỗi ngày cho một người.</li>
+          <li>
+            Tối đa <b>9 giờ công</b> mỗi ngày cho một người —{" "}
+            <b>riêng chủ quán 10 giờ</b>.
+          </li>
           <li>Mỗi người <b>một ca mỗi ngày</b>.</li>
           <li>Không làm quá <b>6 ngày liên tiếp</b>.</li>
           <li>
@@ -101,9 +104,17 @@ export function DocsTab() {
             khung dài nhất trong ngày chỉ 5 giờ.
           </li>
           <li>
-            <b>Chủ quán</b> (ô tick trong tab Nhân viên) làm <b>5 ngày mỗi tuần</b> và{" "}
+            <b>Chủ quán</b> (ô tick trong tab Nhân viên) làm <b>10 giờ mỗi ngày</b>,{" "}
+            <b>5 ngày mỗi tuần</b> và{" "}
             <b>không làm thứ 7</b>. Giờ của chủ tính vào giờ quán như mọi người, kể cả khi
             đếm số người trong giờ cao điểm.
+            <br />
+            <span className="text-slate-500">
+              Chủ cũng là người duy nhất làm <b>xuyên qua giờ nghỉ trưa</b> (T3–T6 quán
+              đóng 15:00–17:00): với chủ thì cả khung 11:30–22:00 tính là một mạch. Đây
+              không phải ưu ái mà là cách duy nhất để 200h/tháng xếp được — nếu chỉ làm
+              trong một khối thì mỗi tuần tối đa 4×5h + 9h = 29h, cả tháng chỉ ~126h.
+            </span>
           </li>
           <li>
             <b>Không giới hạn</b> số nhân viên, cũng không có trần giờ riêng cho Minijob.
