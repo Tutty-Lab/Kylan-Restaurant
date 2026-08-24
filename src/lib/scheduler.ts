@@ -1767,6 +1767,65 @@ function fixSameEmployeeOverlaps(state: SchedulerState): void {
   }
 }
 
+/**
+ * Geteilte Dienste eng zusammenrücken.
+ *
+ * Wer mittags und abends arbeitet, soll dazwischen die Schließzeit frei haben –
+ * nicht mehr. Ohne diese Regel entstand: 11:30–14:30 und dann erst 19:00–22:00.
+ * Das sind sechs bezahlte Stunden, für die jemand von halb zwölf bis zehn im
+ * Dienst ist, mit viereinhalb Stunden Leerlauf und zwei Wegen. Bezahlt wird die
+ * Wartezeit nicht, verbraucht ist der Tag trotzdem.
+ *
+ * Der zweite Dienst wandert deshalb so früh wie möglich in seinen Block –
+ * aber nur, wenn die Stoßzeit dadurch nicht schlechter besetzt wird. Die
+ * Besetzung geht vor; unnötige Wartezeit ist das kleinere Übel.
+ */
+function tightenSplitShifts(state: SchedulerState): void {
+  for (const isoDate of state.dates) {
+    const day = state.dayOf(isoDate);
+    if (day.closed || day.blocks.length < 2) continue;
+
+    const onDay = state.shifts.filter((sh) => sh.date === isoDate);
+    if (onDay.length === 0) continue;
+    const peaks = state.peaksOf(isoDate);
+
+    const proPerson = new Map<string, Shift[]>();
+    for (const sh of onDay) {
+      const liste = proPerson.get(sh.employeeId);
+      if (liste) liste.push(sh);
+      else proPerson.set(sh.employeeId, [sh]);
+    }
+
+    for (const liste of proPerson.values()) {
+      if (liste.length < 2) continue;
+      liste.sort((a, b) => a.startMinutes - b.startMinutes);
+
+      for (let i = 1; i < liste.length; i++) {
+        const spaeter = liste[i];
+        const frueher = liste[i - 1];
+        const block = day.blocks.find(
+          (b) => spaeter.startMinutes >= b.startMinutes && spaeter.endMinutes <= b.endMinutes,
+        );
+        if (!block) continue;
+
+        const dauer = spaeter.endMinutes - spaeter.startMinutes;
+        // Frühestens am Blockanfang, und nie vor dem Ende des ersten Dienstes.
+        const frueheste = Math.max(block.startMinutes, frueher.endMinutes);
+        if (frueheste >= spaeter.startMinutes) continue; // sitzt schon vorn
+
+        const vorher = spaeter.startMinutes;
+        const gut = peakDeficit(onDay, frameOf(day.blocks), peaks);
+        for (let start = frueheste; start < vorher; start += 30) {
+          if (start + dauer > block.endMinutes) break;
+          moveShiftTo(spaeter, start);
+          if (peakDeficit(onDay, frameOf(day.blocks), peaks) <= gut) break; // passt
+          moveShiftTo(spaeter, vorher); // Besetzung leidet – zurück
+        }
+      }
+    }
+  }
+}
+
 function balanceShiftTypes(state: SchedulerState): void {
   for (const isoDate of state.dates) {
     const day = state.dayOf(isoDate);
@@ -2298,6 +2357,8 @@ export function generateSchedule(input: GenerateInput): Shift[] {
   balanceShiftTypes(state);
   // Ganz zum Schluss: keine zwei Dienste einer Person zur selben Zeit.
   fixSameEmployeeOverlaps(state);
+  // Danach die geteilten Dienste eng zusammenrücken (siehe tightenSplitShifts).
+  tightenSplitShifts(state);
 
   // Stabil sortieren: nach Datum, dann Startzeit, dann Mitarbeiter.
   state.shifts.sort(

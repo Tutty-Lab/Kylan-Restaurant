@@ -28,12 +28,21 @@ export function StundenzettelPage({
   employee: Employee;
 }) {
   const dates = datesOfMonth(schedule.year, schedule.month);
-  const byDate = new Map<string, Shift>();
+  // MEHRERE Dienste je Tag: wer mittags und abends arbeitet, hat zwei. Vorher
+  // stand hier eine Map auf EINEN Dienst – der zweite fiel lautlos aus dem
+  // Stundenzettel, und damit aus der Lohnabrechnung.
+  const byDate = new Map<string, Shift[]>();
   for (const s of schedule.shifts) {
-    if (s.employeeId === employee.id) byDate.set(s.date, s);
+    if (s.employeeId !== employee.id) continue;
+    const liste = byDate.get(s.date);
+    if (liste) liste.push(s);
+    else byDate.set(s.date, [s]);
   }
+  for (const liste of byDate.values()) liste.sort((a, b) => a.startMinutes - b.startMinutes);
 
-  const totalMinutes = [...byDate.values()].reduce((a, s) => a + s.paidMinutes, 0);
+  const totalMinutes = [...byDate.values()]
+    .flat()
+    .reduce((a, s) => a + s.paidMinutes, 0);
   const holidayNames = publicHolidayNames(schedule.year);
   const closedByDate = new Map(
     schedule.dateOverrides.filter((o) => o.closed).map((o) => [o.date, o] as const),
@@ -80,7 +89,14 @@ export function StundenzettelPage({
         </thead>
         <tbody>
           {dates.map((d) => {
-            const s = byDate.get(d);
+            const dienste = byDate.get(d) ?? [];
+            const s = dienste[0];
+            // Bei zwei Diensten stehen beide Zeitspannen untereinander; Pause
+            // und Stunden werden addiert, damit die Summe unten stimmt.
+            const zeiten = (feld: "startMinutes" | "endMinutes") =>
+              dienste.map((x) => minutesToTime(x[feld])).join(" / ");
+            const pauseGesamt = dienste.reduce((a, x) => a + x.pauseMinutes, 0);
+            const bezahltGesamt = dienste.reduce((a, x) => a + x.paidMinutes, 0);
             const wd = WEEKDAY_LABELS_DE[weekdayKeyOf(parseIsoDate(d))];
             const holiday = holidayNames.get(d);
             const closed = closedByDate.get(d);
@@ -99,10 +115,12 @@ export function StundenzettelPage({
               <tr key={d} className={isWeekend || holiday || closed ? "bg-slate-50" : ""}>
                 <Td>{format(parseIsoDate(d), "dd.MM.yyyy")}</Td>
                 <Td>{wd}</Td>
-                <Td className="text-center">{s ? minutesToTime(s.startMinutes) : ""}</Td>
-                <Td className="text-center">{s ? minutesToTime(s.endMinutes) : ""}</Td>
-                <Td className="text-center">{s ? `${s.pauseMinutes} Min` : ""}</Td>
-                <Td className="text-center">{s ? minutesToDecimalHours(s.paidMinutes) : "0,00"}</Td>
+                <Td className="text-center">{s ? zeiten("startMinutes") : ""}</Td>
+                <Td className="text-center">{s ? zeiten("endMinutes") : ""}</Td>
+                <Td className="text-center">{s ? `${pauseGesamt} Min` : ""}</Td>
+                <Td className="text-center">
+                  {s ? minutesToDecimalHours(bezahltGesamt) : "0,00"}
+                </Td>
                 <Td className="text-left text-slate-500">{bemerkung}</Td>
               </tr>
             );

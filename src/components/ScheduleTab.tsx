@@ -59,10 +59,20 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
     return weeks[Math.min(weekIndex, weeks.length - 1)]?.dates ?? dates;
   }, [view, weekIndex, weeks, dates]);
 
-  // Tra nhanh: employeeId#date -> Shift
+  // Tra nhanh: employeeId#date -> ALLE Dienste des Tages.
+  //
+  // Es kann zwei geben (mittags und abends). Vorher stand hier eine Map auf
+  // EINEN Dienst, und der zweite verschwand lautlos aus der Anzeige – der Plan
+  // sah dann anders aus, als er war.
   const shiftMap = useMemo(() => {
-    const m = new Map<string, Shift>();
-    for (const s of schedule.shifts) m.set(`${s.employeeId}#${s.date}`, s);
+    const m = new Map<string, Shift[]>();
+    for (const s of schedule.shifts) {
+      const key = `${s.employeeId}#${s.date}`;
+      const liste = m.get(key);
+      if (liste) liste.push(s);
+      else m.set(key, [s]);
+    }
+    for (const liste of m.values()) liste.sort((a, b) => a.startMinutes - b.startMinutes);
     return m;
   }, [schedule.shifts]);
 
@@ -297,7 +307,8 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
                       {emp.targetMinutes / 60}h
                     </td>
                     {gridDates.map((d) => {
-                      const shift = shiftMap.get(`${emp.id}#${d}`);
+                      const dienste = shiftMap.get(`${emp.id}#${d}`) ?? [];
+                      const shift = dienste[0];
                       return (
                         <td
                           key={d}
@@ -308,13 +319,17 @@ export function ScheduleTab({ store }: { store: UseScheduleReturn }) {
                           title="Bấm để sửa"
                         >
                           {shift ? (
-                            <div className="leading-tight">
-                              <div className="font-medium">
-                                {minutesToTime(shift.startMinutes)}–{minutesToTime(shift.endMinutes)}
-                              </div>
-                              <div className="text-[10px] opacity-80">
-                                {minutesToShortHours(shift.paidMinutes)} · Nghỉ {shift.pauseMinutes}
-                              </div>
+                            <div className="leading-tight space-y-0.5">
+                              {dienste.map((x) => (
+                                <div key={x.id}>
+                                  <div className="font-medium">
+                                    {minutesToTime(x.startMinutes)}–{minutesToTime(x.endMinutes)}
+                                  </div>
+                                  <div className="text-[10px] opacity-80">
+                                    {minutesToShortHours(x.paidMinutes)} · Nghỉ {x.pauseMinutes}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           ) : (
                             <span className="text-[11px]">Nghỉ</span>

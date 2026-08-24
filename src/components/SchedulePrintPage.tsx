@@ -20,17 +20,27 @@ import { format } from "date-fns";
  */
 export type SchedulePrintLayout = "byEmployee" | "byDate";
 
-function ShiftCell({ shift, closed }: { shift: Shift | undefined; closed: boolean }) {
-  if (!shift) return <span className="text-slate-400">{closed ? "—" : "frei"}</span>;
+/**
+ * Eine Zelle kann MEHRERE Dienste enthalten – mittags und abends. Steht dort
+ * nur einer, fehlt auf dem ausgehängten Plan die halbe Wahrheit.
+ */
+function ShiftCell({ shifts, closed }: { shifts: Shift[]; closed: boolean }) {
+  if (shifts.length === 0) {
+    return <span className="text-slate-400">{closed ? "—" : "frei"}</span>;
+  }
   return (
     <>
-      <div className="whitespace-nowrap">
-        {minutesToTime(shift.startMinutes)}–{minutesToTime(shift.endMinutes)}
-      </div>
-      <div className="text-[10px] text-slate-500">
-        {minutesToShortHours(shift.paidMinutes)}
-        {shift.pauseMinutes > 0 && ` · P ${shift.pauseMinutes}`}
-      </div>
+      {shifts.map((shift) => (
+        <div key={shift.id}>
+          <div className="whitespace-nowrap">
+            {minutesToTime(shift.startMinutes)}–{minutesToTime(shift.endMinutes)}
+          </div>
+          <div className="text-[10px] text-slate-500">
+            {minutesToShortHours(shift.paidMinutes)}
+            {shift.pauseMinutes > 0 && ` · P ${shift.pauseMinutes}`}
+          </div>
+        </div>
+      ))}
     </>
   );
 }
@@ -47,8 +57,14 @@ export function SchedulePrintPage({
   title: string;
   layout?: SchedulePrintLayout;
 }) {
-  const byKey = new Map<string, Shift>();
-  for (const s of schedule.shifts) byKey.set(`${s.employeeId}#${s.date}`, s);
+  const byKey = new Map<string, Shift[]>();
+  for (const s of schedule.shifts) {
+    const key = `${s.employeeId}#${s.date}`;
+    const liste = byKey.get(key);
+    if (liste) liste.push(s);
+    else byKey.set(key, [s]);
+  }
+  for (const liste of byKey.values()) liste.sort((a, b) => a.startMinutes - b.startMinutes);
 
   const holidays = publicHolidays(schedule.year);
   const holidayNames = publicHolidayNames(schedule.year);
@@ -88,14 +104,14 @@ export function SchedulePrintPage({
           </thead>
           <tbody>
             {schedule.employees.map((e) => {
-              const own = dates.map((d) => byKey.get(`${e.id}#${d}`));
+              const own = dates.flatMap((d) => byKey.get(`${e.id}#${d}`) ?? []);
               const total = own.reduce((sum, s) => sum + (s?.paidMinutes ?? 0), 0);
               return (
                 <tr key={e.id}>
                   <td className={`${td} whitespace-nowrap`}>{e.name}</td>
-                  {dates.map((d, i) => (
+                  {dates.map((d) => (
                     <td key={d} className={`${td} text-center ${closedOn(d) ? "bg-slate-50" : ""}`}>
-                      <ShiftCell shift={own[i]} closed={closedOn(d)} />
+                      <ShiftCell shifts={byKey.get(`${e.id}#${d}`) ?? []} closed={closedOn(d)} />
                     </td>
                   ))}
                   <td className={`${td} text-right font-medium`}>{minutesToShortHours(total)}</td>
@@ -145,7 +161,7 @@ export function SchedulePrintPage({
                   </td>
                   {schedule.employees.map((e) => (
                     <td key={e.id} className={`${td} text-center`}>
-                      <ShiftCell shift={byKey.get(`${e.id}#${d}`)} closed={closed} />
+                      <ShiftCell shifts={byKey.get(`${e.id}#${d}`) ?? []} closed={closed} />
                     </td>
                   ))}
                 </tr>

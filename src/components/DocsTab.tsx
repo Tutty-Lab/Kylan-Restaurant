@@ -93,6 +93,9 @@ export function DocsTab() {
           <li>
             <b>Ca gãy:</b> một người có thể làm <b>cả khung trưa lẫn khung tối</b> trong
             cùng một ngày — mỗi khung nhiều nhất một ca, và hai ca không được chồng giờ.
+            Khoảng nghỉ giữa hai ca được kéo <b>ngắn nhất có thể</b>, đúng bằng lúc quán
+            đóng cửa: người ta không phải chờ vật vờ 4–5 tiếng giữa hai ca rồi đi về hai
+            lượt. Chỉ khi kéo sát làm hụt người giờ cao điểm thì app mới để giãn ra.
             Trước đây app chỉ cho một ca mỗi ngày (luật của quán khác, quán đó mở liền
             mạch), khiến T3–T6 mỗi người chỉ dùng được 5 tiếng dù quán mở 10 tiếng rưỡi.
           </li>
@@ -142,7 +145,7 @@ export function DocsTab() {
           Công thức mỗi ngày: <code>giờ ngày = tổng giờ tháng × trọng số ngày ÷ tổng trọng số</code>.
           <br />
           <b>Thứ 2 đóng cửa</b>. Trọng số nhích dần về cuối tuần, nhưng <b>cố ý để thoải</b>:
-          xếp thêm giờ vào ngày mà giờ cao điểm chỉ cho tối đa 2 người thì cũng không dùng
+          xếp thêm giờ vào ngày mà giờ cao điểm đã chạm trần số người thì cũng không dùng
           được, chỉ tổ thừa người. Ngày <b>đóng cửa</b> có trọng số 0 (không xếp giờ, giờ dồn
           sang ngày khác).
         </p>

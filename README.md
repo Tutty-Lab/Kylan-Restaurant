@@ -100,6 +100,11 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   "ein Dienst pro Tag" stammt aus einer Filiale ohne Mittagsschließung; hier
   drückte sie die Monatsdecke auf 161 h, obwohl im Laden längst mittags und
   abends gearbeitet wird.
+  - Die LÜCKE zwischen zwei Diensten wird so klein wie möglich gehalten
+    (`tightenSplitShifts`) – im Normalfall genau die Schließzeit. Ohne das
+    entstand 11:30–14:30 und dann erst 19:00–22:00: sechs bezahlte Stunden, für
+    die jemand von halb zwölf bis zehn im Dienst ist, mit zwei Wegen. Nur wenn
+    das engere Rücken die Stoßzeit schlechter besetzt, bleibt die Lücke.
 - **Der Chef ist die Ausnahme**: 10 Stunden am Tag (`OWNER_MAX_SHIFT_HOURS`),
   und sein Dienst läuft über die Mittagsschließung hinweg – für ihn zählt der
   ganze Rahmen 11:30–22:00 als ein Stück. Das ist die einzige Lesart, in der
