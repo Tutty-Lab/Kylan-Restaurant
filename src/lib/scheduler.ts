@@ -202,13 +202,18 @@ const MITTAG: PeakWindow = {
   maxStaff: 5,
 };
 
+// Angabe des Betriebs: der Andrang liegt zwischen 18 und 21 Uhr, nicht über
+// den ganzen Abend. Ein engeres Fenster heißt auch: die Obergrenze von fünf
+// Personen gilt nur noch dort, davor und danach darf frei besetzt werden.
+// Dieselben Zeiten steuern concentrateEveningShifts: kurze Abenddienste enden
+// an EVENING_RUSH_END statt am Schließen, damit sie auf der Spitze liegen.
+export const EVENING_RUSH_START = 18 * 60; // 18:00
+export const EVENING_RUSH_END = 21 * 60; // 21:00
+
 const ABEND: PeakWindow = {
   label: "Tối",
-  // Angabe des Betriebs: der Andrang liegt zwischen 18 und 21 Uhr, nicht über
-  // den ganzen Abend. Ein engeres Fenster heißt auch: die Obergrenze von fünf
-  // Personen gilt nur noch dort, davor und danach darf frei besetzt werden.
-  startMinutes: 18 * 60,
-  endMinutes: 21 * 60,
+  startMinutes: EVENING_RUSH_START,
+  endMinutes: EVENING_RUSH_END,
   minStaff: 1,
   maxStaff: 5,
 };
@@ -1805,6 +1810,84 @@ function fixSameEmployeeOverlaps(state: SchedulerState): void {
  * aber nur, wenn die Stoßzeit dadurch nicht schlechter besetzt wird. Die
  * Besetzung geht vor; unnötige Wartezeit ist das kleinere Übel.
  */
+/**
+ * Kurze Abenddienste auf die Stoßzeit (18–21 Uhr) ziehen.
+ *
+ * Ohne diese Regel hängt JEDER Abenddienst am Schließen 22:00 (getShiftTemplate
+ * verankert "Spät" am Fensterende): ein 3-h-Dienst wird 19:00–22:00. Auf dem
+ * ausgehängten Plan steht dann „19–22", obwohl der Andrang zwischen 18 und 21
+ * Uhr liegt – die erste Stunde der Spitze bleibt dünn, die stille Stunde nach
+ * 21 Uhr doppelt besetzt.
+ *
+ * Ziel: ein 3-h-Dienst endet um 21:00 (also 18:00–21:00), ein 4-h-Dienst
+ * ebenfalls (17:00–21:00). Dauer und Pause bleiben unangetastet, das Monats-Soll
+ * also exakt. Zwei Rollen bleiben ausgenommen:
+ *
+ *  • Der Schließer. Zum Zusperren reicht EINE Kraft; der längste Dienst am
+ *    Schließen bleibt dort (er deckt die Spitze ohnehin ganz ab), jeder weitere
+ *    rückt auf 21:00.
+ *  • Der Abend-Aufsperrer Di–Fr. Der Laden macht mittags zu und um 17:00 wieder
+ *    auf; ein Dienst, der am Anfang des Abendblocks (17:00) beginnt, sperrt auf
+ *    und bleibt deshalb stehen. Am Wochenende ist 17:00 kein Blockanfang – dort
+ *    wird auch ein 17:00-Dienst auf die Spitze gezogen.
+ *
+ * Verschoben wird nur, wenn der Dienst dabei in seinem Block bleibt, keinen
+ * zweiten Dienst derselben Person überlappt, der Tag weiter auf- UND zusperrt
+ * und die Spitze nicht ÜBER die erlaubte Personenzahl steigt (peakDeficit darf
+ * nicht wachsen).
+ */
+function concentrateEveningShifts(state: SchedulerState): void {
+  for (const isoDate of state.dates) {
+    const day = state.dayOf(isoDate);
+    if (day.closed || day.blocks.length === 0) continue;
+
+    // Abendblock = der letzte Block des Tages. Nur sinnvoll, wenn er über das
+    // Ende der Spitze hinaus bis zum Schließen reicht (sonst gibt es nichts zu
+    // konzentrieren).
+    const block = day.blocks[day.blocks.length - 1];
+    if (block.endMinutes <= EVENING_RUSH_END) continue;
+
+    const first = day.blocks[0];
+    const onDay = state.shifts.filter((s) => s.date === isoDate);
+    const peaks = state.peaksOf(isoDate);
+
+    // Nach einem Zug muss der Tag weiter auf- (erster Block) UND zusperren
+    // (letzter Block). Sonst steht niemand mehr am Schließen 22:00.
+    const opensAndCloses = () =>
+      onDay.some((s) => s.startMinutes === first.startMinutes) &&
+      onDay.some((s) => s.endMinutes === block.endMinutes);
+
+    // Zieht `s` so, dass er um 21:00 endet – falls das erlaubt und sinnvoll ist.
+    const aufSpitze = (s: Shift) => {
+      const start = EVENING_RUSH_END - (s.endMinutes - s.startMinutes);
+      if (start < block.startMinutes || start >= s.startMinutes) return; // passt nicht / nicht früher
+      if (!freiFuer(onDay, s, start)) return;
+      const vorher = s.startMinutes;
+      const gut = peakDeficit(onDay, day.window, peaks);
+      moveShiftTo(s, start);
+      if (!opensAndCloses() || peakDeficit(onDay, day.window, peaks) > gut) moveShiftTo(s, vorher);
+    };
+
+    // 1. Höchstens ein Schließer. Längster zuerst – den behalten wir; alle
+    //    weiteren Dienste am Schließen wandern auf die Spitze.
+    const closers = onDay
+      .filter((s) => s.endMinutes === block.endMinutes && s.startMinutes >= block.startMinutes)
+      .sort((a, b) => b.endMinutes - b.startMinutes - (a.endMinutes - a.startMinutes));
+    for (let i = 1; i < closers.length; i++) aufSpitze(closers[i]);
+
+    // 2. Kurze Abenddienste (3–4 h), die weder aufsperren noch schon um 21:00
+    //    enden, ebenfalls auf die Spitze ziehen (z.B. ein 17:00–20:00 am
+    //    Wochenende). Der Abend-Aufsperrer Di–Fr (Start am Blockanfang) bleibt.
+    for (const s of onDay) {
+      if (s.paidMinutes > 4 * 60) continue;
+      if (s.startMinutes < block.startMinutes || s.endMinutes > block.endMinutes) continue;
+      if (s.startMinutes === block.startMinutes) continue; // Aufsperrer
+      if (s.endMinutes === block.endMinutes || s.endMinutes === EVENING_RUSH_END) continue;
+      aufSpitze(s);
+    }
+  }
+}
+
 function tightenSplitShifts(state: SchedulerState): void {
   for (const isoDate of state.dates) {
     const day = state.dayOf(isoDate);
@@ -2384,6 +2467,9 @@ export function generateSchedule(input: GenerateInput): Shift[] {
   fixSameEmployeeOverlaps(state);
   // Danach die geteilten Dienste eng zusammenrücken (siehe tightenSplitShifts).
   tightenSplitShifts(state);
+  // Zuletzt: kurze Abenddienste auf die Stoßzeit (18–21) ziehen, nur ein
+  // Schließer bleibt bis 22:00 (siehe concentrateEveningShifts).
+  concentrateEveningShifts(state);
 
   // Stabil sortieren: nach Datum, dann Startzeit, dann Mitarbeiter.
   state.shifts.sort(

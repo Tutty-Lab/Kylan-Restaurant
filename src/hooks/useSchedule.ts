@@ -85,6 +85,11 @@ export function useSchedule() {
     return persisted?.originalShifts ?? [];
   });
   const [genError, setGenError] = useState<string | null>(null);
+  // Jeder Klick auf "Tạo lịch" soll einen ANDEREN gültigen Plan liefern. Der
+  // Scheduler ist deterministisch: gleicher Seed => gleicher Plan. Ohne diesen
+  // Zähler kam bei unveränderten Mitarbeitern jedes Mal derselbe Plan heraus –
+  // man musste erst Stunden ändern, um Abwechslung zu bekommen.
+  const genNonce = useRef(0);
   const [remoteStatus, setRemoteStatus] = useState<RemoteStatus>(
     isRemoteConfigured ? "idle" : "off",
   );
@@ -323,6 +328,8 @@ export function useSchedule() {
         workHours: schedule.workHours,
         overrides: overridesToMap(schedule.dateOverrides),
         employees: schedule.employees,
+        // Frischer Seed pro Klick => jedes Mal ein anderer gültiger Plan.
+        seed: `${schedule.year}-${schedule.month}-${Date.now()}-${genNonce.current++}`,
       });
       setSchedule((s) => ({ ...s, shifts }));
       setOriginalShifts(shifts.map((sh) => ({ ...sh })));
