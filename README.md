@@ -94,7 +94,12 @@ npm run preview  # Produktions-Build lokal ansehen
 Maßgeblich ist immer der Code; die Doku-Tabellen in der App (Tab **Tài liệu**)
 werden direkt aus den Konstanten gerendert und können daher nicht veralten.
 
-- Max. **9 bezahlte Stunden** pro Tag, **ein Dienst** pro Mitarbeiter und Tag.
+- Max. **9 bezahlte Stunden** pro Tag. **Geteilte Dienste sind erlaubt**: eine
+  Person darf mittags UND abends arbeiten – höchstens ein Dienst je
+  Öffnungsblock, und zwei Dienste dürfen sich nie überschneiden. Die alte Regel
+  "ein Dienst pro Tag" stammt aus einer Filiale ohne Mittagsschließung; hier
+  drückte sie die Monatsdecke auf 161 h, obwohl im Laden längst mittags und
+  abends gearbeitet wird.
 - **Der Chef ist die Ausnahme**: 10 Stunden am Tag (`OWNER_MAX_SHIFT_HOURS`),
   und sein Dienst läuft über die Mittagsschließung hinweg – für ihn zählt der
   ganze Rahmen 11:30–22:00 als ein Stück. Das ist die einzige Lesart, in der

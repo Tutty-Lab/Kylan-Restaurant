@@ -38,13 +38,19 @@ describe("Scheduler – August 2026 Beispieldaten", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("höchstens ein Dienst pro Mitarbeiter und Tag", () => {
-    const seen = new Set<string>();
-    for (const s of shifts) {
-      const key = `${s.employeeId}#${s.date}`;
-      expect(seen.has(key)).toBe(false);
-      seen.add(key);
+  it("kein Mitarbeiter steht zweimal gleichzeitig im Laden", () => {
+    // Zwei Dienste an einem Tag sind erlaubt (mittags und abends), solange sie
+    // sich nicht überschneiden.
+    const ueberlappungen: string[] = [];
+    for (const a of shifts) {
+      for (const b of shifts) {
+        if (a === b || a.employeeId !== b.employeeId || a.date !== b.date) continue;
+        if (a.startMinutes < b.endMinutes && b.startMinutes < a.endMinutes) {
+          ueberlappungen.push(`${a.employeeId} ${a.date}`);
+        }
+      }
     }
+    expect(ueberlappungen).toEqual([]);
   });
 
   it("nie mehr als 6 aufeinanderfolgende Arbeitstage", () => {

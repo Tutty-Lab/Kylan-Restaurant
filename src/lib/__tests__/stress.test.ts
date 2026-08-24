@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generateSchedule } from "../scheduler";
+import { validateSchedule } from "../validation";
 import { maxConsecutiveRun } from "../consecutive";
 import { calculatePause } from "../time";
 import { DEFAULT_WORK_HOURS, resolveDay, type OverrideMap } from "../workHours";
@@ -15,22 +16,48 @@ const mk = (id: string, type: Employee["employmentType"], hours: number): Employ
 });
 
 /** Prüft alle harten Regeln, die der Scheduler laut Kopfkommentar zusichert. */
-function audit(shifts: Shift[], employees: Employee[], year: number, overrides: OverrideMap = {}) {
+function audit(
+  shifts: Shift[],
+  employees: Employee[],
+  year: number,
+  overrides: OverrideMap = {},
+  /**
+   * true = ein FEHLBETRAG ist erlaubt (der Monat gibt das Soll nicht her).
+   * Zu VIEL verteilte Zeit bleibt in jedem Fall ein Fehler.
+   *
+   * Seit der Scheduler bei zu hohem Soll keinen Abbruch mehr macht, sondern
+   * den bestmöglichen Plan liefert, ist "nicht ganz erreicht" ein zulässiges
+   * Ergebnis – gemeldet wird es als Warnung in validateSchedule.
+   */
+  fehlbetragErlaubt = false,
+) {
   const problems: string[] = [];
   const holidays = publicHolidays(year);
 
   // 1. Monats-Soll exakt getroffen
   for (const e of employees) {
     const sum = shifts.filter((s) => s.employeeId === e.id).reduce((a, s) => a + s.paidMinutes, 0);
-    if (sum !== e.targetMinutes) {
+    if (sum > e.targetMinutes) {
+      problems.push(`${e.id}: xếp quá ${sum / 60}h / ${e.targetMinutes / 60}h`);
+    } else if (sum < e.targetMinutes && !fehlbetragErlaubt) {
       problems.push(`${e.id}: ${sum / 60}h thay vì ${e.targetMinutes / 60}h`);
     }
   }
 
-  // 2. Höchstens ein Dienst je Mitarbeiter und Tag
+  // 2. Mehrere Dienste an einem Tag sind erlaubt – aber sie dürfen sich nicht
+  //    ÜBERSCHNEIDEN. Der Laden schließt Di–Fr mittags; wer nur einen Block
+  //    arbeiten dürfte, käme dort auf höchstens 5 Stunden, und daraus entstand
+  //    eine Monatsdecke, die es in Wirklichkeit nicht gibt.
   for (const e of employees) {
-    const dates = shifts.filter((s) => s.employeeId === e.id).map((s) => s.date);
-    if (new Set(dates).size !== dates.length) problems.push(`${e.id}: trùng ngày`);
+    const meine = shifts.filter((s) => s.employeeId === e.id);
+    for (const a of meine) {
+      for (const b of meine) {
+        if (a === b || a.date !== b.date) continue;
+        if (a.startMinutes < b.endMinutes && b.startMinutes < a.endMinutes) {
+          problems.push(`${e.id} ${a.date}: hai ca chồng giờ`);
+        }
+      }
+    }
   }
 
   // 3. Höchstens 6 aufeinanderfolgende Arbeitstage
@@ -119,20 +146,40 @@ describe("Scheduler: định mức cao ép sát số ngày trong tháng", () => 
 
   for (const c of cases) {
     it(c.ten, () => {
-      let shifts: Shift[];
-      try {
-        shifts = generateSchedule({
-          year: c.year,
-          month: c.month,
-          workHours: DEFAULT_WORK_HOURS,
-          employees: c.emps,
-        });
-      } catch (err) {
-        // Từ chối thẳng cũng là hành vi đúng – miễn là không tạo lịch sai.
-        expect(err).toBeInstanceOf(Error);
-        return;
+      // Ein zu hohes Soll bricht die Planung NICHT mehr ab: geliefert wird der
+      // bestmögliche Plan, der Rest ist eine Warnung. Geprüft wird deshalb,
+      // dass alle harten Regeln stehen – nur der Fehlbetrag ist erlaubt.
+      const shifts = generateSchedule({
+        year: c.year,
+        month: c.month,
+        workHours: DEFAULT_WORK_HOURS,
+        employees: c.emps,
+      });
+      expect(audit(shifts, c.emps, c.year, {}, true)).toEqual([]);
+      expect(shifts.length).toBeGreaterThan(0);
+    });
+
+    it(`${c.ten} – Fehlbetrag wird als Warnung gemeldet`, () => {
+      const shifts = generateSchedule({
+        year: c.year,
+        month: c.month,
+        workHours: DEFAULT_WORK_HOURS,
+        employees: c.emps,
+      });
+      const result = validateSchedule(c.emps, shifts);
+      const knapp = c.emps.filter(
+        (e) =>
+          shifts.filter((s) => s.employeeId === e.id).reduce((a, s) => a + s.paidMinutes, 0) <
+          e.targetMinutes,
+      );
+      for (const e of knapp) {
+        const warnung = result.errors.find(
+          (x) => x.employeeId === e.id && x.severity === "warning",
+        );
+        expect(warnung?.message).toContain("mới xếp được");
       }
-      expect(audit(shifts, c.emps, c.year)).toEqual([]);
+      // Warnungen dürfen den Plan nicht ungültig machen.
+      if (knapp.length > 0) expect(result.valid).toBe(true);
     });
   }
 });

@@ -763,11 +763,24 @@ function makeShift(
 ): Shift {
   const type = chooseTemplateType(state, isoDate, employee.employmentType);
   const day = state.dayOf(isoDate);
+  // Blöcke, in denen diese Person an diesem Tag schon steht, sind tabu.
+  //
+  // Ohne das legten die Reparaturläufe zwei Dienste in DENSELBEN Block: sie
+  // rufen makeShift ohne vorgegebenen Block, und der nahm bis dahin einfach den
+  // ersten passenden – also wieder den Mittag, obwohl dort schon ein Dienst
+  // derselben Person lag. Heraus kamen zwei Dienste 11:30–14:30 am selben Tag.
+  const belegt = blocksUsedOn(state, employee.id, isoDate);
+  const frei = day.blocks.filter((_, i) => !belegt.has(i));
+  // Ist wirklich nichts frei, bleibt nur der längste Block – dann greift
+  // hinterher fixSameEmployeeOverlaps. Vorher wurde hier auf den ERSTEN Block
+  // zurückgefallen, und der war meist genau der schon belegte.
+  const auswahl = frei.length > 0 ? frei : [blockForShift(day.blocks, presenceFromPaid(paidMinutes), type)];
+
   const block =
     forceBlock ??
     (employee.isOwner
       ? frameOf(day.blocks) // durchgehend, auch über die Mittagsschließung
-      : blockForShift(day.blocks, presenceFromPaid(paidMinutes), type));
+      : blockForShift(auswahl, presenceFromPaid(paidMinutes), type));
   const tpl = getShiftTemplate(paidMinutes / 60, type, block.startMinutes, block.endMinutes);
   return {
     id: nextShiftId(),
@@ -801,6 +814,116 @@ function applyShift(state: SchedulerState, shift: Shift): void {
  * Platziert genau eine Schicht für einen Mitarbeiter: bestes Datum wählen,
  * Schichtlänge an das Tagesfenster anpassen. Gibt true zurück, wenn platziert.
  */
+/**
+ * Welche Öffnungsblöcke dieses Tages hat die Person schon belegt?
+ *
+ * Kylan schließt Di–Fr von 15:00 bis 17:00. Wer nur EINEN Block arbeiten darf,
+ * kommt an solchen Tagen auf höchstens 5 Stunden – daraus entstand eine Decke
+ * von 161 h im Monat, die es in Wirklichkeit nicht gibt: im Laden arbeitet man
+ * mittags UND abends. Die Regel "ein Dienst pro Tag" stammt aus einer Filiale
+ * ohne Mittagsschließung; dort war sie harmlos, hier war sie schlicht falsch.
+ *
+ * Erlaubt ist deshalb: höchstens EIN Dienst je Block, also an einem Tag mit
+ * zwei Blöcken auch zwei Dienste. Die Tagesobergrenze an Stunden gilt weiter.
+ */
+function blocksUsedOn(state: SchedulerState, employeeId: string, isoDate: string): Set<number> {
+  const day = state.dayOf(isoDate);
+  const used = new Set<number>();
+  for (const sh of state.shifts) {
+    if (sh.employeeId !== employeeId || sh.date !== isoDate) continue;
+    const i = day.blocks.findIndex(
+      (b) => sh.startMinutes >= b.startMinutes && sh.endMinutes <= b.endMinutes,
+    );
+    used.add(i >= 0 ? i : -1); // -1: Dienst über den ganzen Rahmen (Chef)
+  }
+  return used;
+}
+
+/** Wie viele Dienste hat diese Person an diesem Tag schon? */
+function shiftCountOn(state: SchedulerState, employeeId: string, isoDate: string): number {
+  let n = 0;
+  for (const sh of state.shifts) if (sh.employeeId === employeeId && sh.date === isoDate) n++;
+  return n;
+}
+
+/** Schon an diesem Tag verplante bezahlte Stunden dieser Person. */
+function dayHoursOf(state: SchedulerState, employeeId: string, isoDate: string): number {
+  let min = 0;
+  for (const sh of state.shifts) {
+    if (sh.employeeId === employeeId && sh.date === isoDate) min += sh.paidMinutes;
+  }
+  return min / 60;
+}
+
+/**
+ * Wie viele Stunden darf die Person an diesem Tag NOCH bekommen?
+ *
+ * 0 heißt: der Tag ist für sie durch – entweder sind alle Blöcke belegt oder
+ * die Tagesobergrenze ist erreicht. Der Chef arbeitet über den ganzen Rahmen
+ * und bekommt deshalb nur einen Dienst je Tag.
+ */
+function dayRoomLeft(state: SchedulerState, employee: Employee, isoDate: string): number {
+  const day = state.dayOf(isoDate);
+  const belegt = blocksUsedOn(state, employee.id, isoDate);
+  if (belegt.size === 0) return maxHoursFor(employee);
+  // Chef: sein Dienst deckt den ganzen Tag ab, ein zweiter passt nicht daneben.
+  if (employee.isOwner || belegt.has(-1)) return 0;
+  // Nach ANZAHL der Dienste zählen, nicht nach der Menge belegter Blöcke:
+  // liegen zwei Dienste versehentlich im selben Block, meldet die Menge nur
+  // einen belegten Block – und es käme ein dritter Dienst dazu.
+  if (shiftCountOn(state, employee.id, isoDate) >= day.blocks.length) return 0;
+  return Math.max(0, maxHoursFor(employee) - dayHoursOf(state, employee.id, isoDate));
+}
+
+/**
+ * Passt ein Dienst dieser LÄNGE an diesem Tag noch zu dieser Person?
+ *
+ * Die eine Frage, durch die jede Zuteilung muss – erste Verteilung, Umzug und
+ * Tausch. Vorher wurde an den drei Stellen unterschiedlich geprüft: mal nur die
+ * Stundenzahl, mal nur "arbeitet schon an dem Tag". Dabei sind Dienste
+ * entstanden, die sich überlappen oder in einen zu kurzen Block gezwängt
+ * wurden.
+ *
+ * Bedingungen: ein freier Block, der lang genug ist, und die Tagesobergrenze
+ * an Stunden. Der Chef arbeitet über den ganzen Rahmen und bekommt deshalb nur
+ * einen Dienst je Tag.
+ */
+function fitsOnDay(
+  state: SchedulerState,
+  employee: Employee,
+  isoDate: string,
+  paidMinutes: number,
+): boolean {
+  const day = state.dayOf(isoDate);
+  if (day.closed) return false;
+
+  const belegt = blocksUsedOn(state, employee.id, isoDate);
+  const praesenz = presenceFromPaid(paidMinutes);
+
+  if (employee.isOwner) {
+    if (belegt.size > 0) return false;
+    return spanFor(day, employee) >= praesenz;
+  }
+  if (belegt.has(-1)) return false; // fremder Dienst über den ganzen Rahmen
+  if (shiftCountOn(state, employee.id, isoDate) >= day.blocks.length) return false;
+  if (dayHoursOf(state, employee.id, isoDate) + paidMinutes / 60 > maxHoursFor(employee)) {
+    return false;
+  }
+  return day.blocks.some(
+    (b, i) => !belegt.has(i) && b.endMinutes - b.startMinutes >= praesenz,
+  );
+}
+
+/** Erster freier Öffnungsblock dieser Person an diesem Tag. */
+function freeBlockOn(state: SchedulerState, employee: Employee, isoDate: string): DayWindow | null {
+  const day = state.dayOf(isoDate);
+  const belegt = blocksUsedOn(state, employee.id, isoDate);
+  for (let i = 0; i < day.blocks.length; i++) {
+    if (!belegt.has(i)) return day.blocks[i];
+  }
+  return null;
+}
+
 function placeOneShift(state: SchedulerState, employee: Employee): boolean {
   const remaining = state.remaining.get(employee.id)!;
   if (remaining <= 0) return false;
@@ -842,9 +965,11 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
   let bestScore = Number.NEGATIVE_INFINITY;
 
   for (const isoDate of state.dates) {
-    if (worked.has(isoDate)) continue; // max. ein Dienst pro Tag
     const day = state.dayOf(isoDate);
     if (day.closed) continue; // Betriebsruhe -> kein Dienst
+    // Höchstens ein Dienst je BLOCK statt je Tag – siehe dayRoomLeft.
+    const tagesRest = dayRoomLeft(state, employee, isoDate);
+    if (tagesRest < 3) continue;
 
     // ── Sonderregeln für den Chef ──────────────────────────────────────────
     // Er arbeitet mit, aber nach eigenem Rhythmus: fünf Tage die Woche, und
@@ -864,10 +989,23 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     const bodiesMissing = Math.max(0, wanted - dsNow.count);
 
     // Längste Schicht, die ins Fenster passt UND den Rest exakt aufteilbar lässt.
+    const schonBelegt = blocksUsedOn(state, employee.id, isoDate).size > 0;
+    const freierBlock = freeBlockOn(state, employee, isoDate);
+
     let maxHours = Math.min(
       maxShiftHoursForWindow(spanFor(day, employee)),
       maxHoursFor(employee),
+      tagesRest, // ein zweiter Dienst darf die Tagesgrenze nicht reißen
     );
+    // Ein zweiter Dienst muss in einen noch freien Block passen.
+    if (schonBelegt) {
+      if (!freierBlock) continue;
+      maxHours = Math.min(
+        maxHours,
+        maxShiftHoursForWindow(freierBlock.endMinutes - freierBlock.startMinutes),
+      );
+      if (maxHours < 3) continue;
+    }
 
     // Reichen die Stunden des Tages nicht für die volle Abdeckung, ist ZWEI
     // Personen wichtiger als eine lange. Vorher entstanden reihenweise Tage
@@ -1014,7 +1152,11 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
       bestScore = score;
       bestDate = isoDate;
       bestHours = hours;
-      bestBlock = fuellDenBlock ? leererBlock! : undefined;
+      bestBlock = fuellDenBlock
+        ? leererBlock!
+        : schonBelegt
+          ? (freierBlock ?? undefined)
+          : undefined;
     }
   }
 
@@ -1114,7 +1256,10 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
 
       const presence = presenceFromPaid(shift.paidMinutes);
       for (const to of state.dates) {
-        if (to === from || worked.has(to)) continue;
+        if (to === from) continue;
+        // Der Zieltag muss noch Platz haben – ein freier Block und genug
+        // Stunden bis zur Tagesgrenze.
+        if (!fitsOnDay(state, employee, to, shift.paidMinutes)) continue;
         if (!ownerDayOk(state, employee.id, to, from)) continue;
         const day = state.dayOf(to);
         if (day.closed || spanFor(day, employee) < presence) continue; // zu / passt nicht
@@ -1204,7 +1349,8 @@ function canSwap(state: SchedulerState, a: Shift, b: Shift, allowSameEmployee = 
     const workedA = state.worked.get(a.employeeId)!;
     const workedB = state.worked.get(b.employeeId)!;
     // Höchstens ein Dienst pro Mitarbeiter und Tag.
-    if (workedA.has(b.date) || workedB.has(a.date)) return false;
+    if (!fitsOnDay(state, state.byId.get(a.employeeId)!, b.date, a.paidMinutes)) return false;
+    if (!fitsOnDay(state, state.byId.get(b.employeeId)!, a.date, b.paidMinutes)) return false;
 
     // 6-Tage-Regel für beide, jeweils ohne den eigenen alten Tag.
     const trialA = new Set(workedA);
@@ -1334,7 +1480,8 @@ function trySwaps(state: SchedulerState, employeesById: Map<string, Employee>): 
       const workedA = state.worked.get(empA.id)!;
       const workedB = state.worked.get(empB.id)!;
       // Harte Regel: höchstens ein Dienst pro Mitarbeiter und Tag.
-      if (workedA.has(b.date) || workedB.has(a.date)) continue;
+      if (!fitsOnDay(state, empA, b.date, a.paidMinutes)) continue;
+      if (!fitsOnDay(state, empB, a.date, b.paidMinutes)) continue;
 
       // Und die Sonderregeln des Chefs (kein Samstag, fünf Tage die Woche).
       // Diese Funktion prüft alles selbst, statt canSwap zu rufen – die
@@ -1552,6 +1699,74 @@ function repairPeakExcess(state: SchedulerState, employeesById: Map<string, Empl
  *     UND jemand zusperren. Vorher kam es vor, dass um 11:00 niemand da war.
  * Es wird ausschließlich der Typ gedreht, nie die Dauer – das Soll bleibt exakt.
  */
+/**
+ * Letzte Kontrolle: kein Mensch steht zweimal gleichzeitig im Laden.
+ *
+ * Seit ein Mensch mittags UND abends arbeiten darf, kann eine Person mehrere
+ * Dienste an einem Tag haben. Erzeugt werden sie sauber getrennt – aber danach
+ * schieben mehrere Läufe die Dienste noch herum (Stoßzeit-Layout, Früh/Spät-
+ * Quote), und jeder davon kennt nur seine eigene Frage. In der Summe sind
+ * zweimal 11:30–14:30 am selben Tag entstanden.
+ *
+ * Statt jedem dieser Läufe einzeln beizubringen, worauf er achten muss, steht
+ * hier am Ende eine Kontrolle, die den Zustand geradezieht: überlappt ein
+ * Dienst einen anderen derselben Person, wandert er in einen freien Block.
+ * Das ist die Stelle, die die Zusicherung wirklich hält.
+ */
+function fixSameEmployeeOverlaps(state: SchedulerState): void {
+  for (const isoDate of state.dates) {
+    const day = state.dayOf(isoDate);
+    if (day.closed || day.blocks.length < 2) continue;
+
+    const proPerson = new Map<string, Shift[]>();
+    for (const sh of state.shifts) {
+      if (sh.date !== isoDate) continue;
+      const liste = proPerson.get(sh.employeeId);
+      if (liste) liste.push(sh);
+      else proPerson.set(sh.employeeId, [sh]);
+    }
+
+    for (const liste of proPerson.values()) {
+      if (liste.length < 2) continue;
+
+      // Welcher Block gehört zu welchem Dienst? -1 = passt in keinen.
+      const blockVon = (sh: Shift) =>
+        day.blocks.findIndex(
+          (b) => sh.startMinutes >= b.startMinutes && sh.endMinutes <= b.endMinutes,
+        );
+
+      for (let runde = 0; runde < liste.length; runde++) {
+        liste.sort((a, b) => a.startMinutes - b.startMinutes);
+        const paar = liste.findIndex(
+          (sh, i) => i > 0 && liste[i - 1].endMinutes > sh.startMinutes,
+        );
+        if (paar < 0) break; // nichts überlappt mehr
+
+        // Beide Beteiligten versuchen: mal passt nur der kürzere in den
+        // freien Block. Nur den späteren zu verschieben reicht nicht.
+        const kandidaten = [liste[paar], liste[paar - 1]];
+        let verschoben = false;
+
+        for (const dieser of kandidaten) {
+          const belegt = new Set(liste.filter((x) => x !== dieser).map(blockVon));
+          const praesenz = dieser.endMinutes - dieser.startMinutes;
+          const ziel = day.blocks.find(
+            (b, idx) => !belegt.has(idx) && b.endMinutes - b.startMinutes >= praesenz,
+          );
+          if (ziel) {
+            moveShiftTo(dieser, ziel.startMinutes);
+            verschoben = true;
+            break;
+          }
+        }
+        // Kein freier Block lang genug – dann bleibt es, und die Prüfung
+        // meldet es. Weitersuchen hätte keinen Zweck.
+        if (!verschoben) break;
+      }
+    }
+  }
+}
+
 function balanceShiftTypes(state: SchedulerState): void {
   for (const isoDate of state.dates) {
     const day = state.dayOf(isoDate);
@@ -1649,6 +1864,27 @@ function balanceShiftTypes(state: SchedulerState): void {
 }
 
 /** Verschiebt einen Dienst auf eine neue Startzeit; Dauer bleibt gleich. */
+/**
+ * Darf dieser Dienst an dieser Stelle liegen, ohne einen ANDEREN Dienst
+ * DERSELBEN Person am selben Tag zu überlappen?
+ *
+ * Seit ein Mensch mittags und abends arbeiten darf, kann eine Person mehrere
+ * Dienste an einem Tag haben. Das Umsortieren für die Stoßzeit kennt diesen
+ * Zusammenhang nicht – es schiebt Dienste frei im Fenster herum und hat dabei
+ * zwei Dienste derselben Person übereinandergelegt (zweimal 11:30–14:30 am
+ * selben Tag). Diese Prüfung verhindert das an jeder Stelle, die verschiebt.
+ */
+function freiFuer(onDay: Shift[], shift: Shift, startMinutes: number): boolean {
+  const ende = startMinutes + (shift.endMinutes - shift.startMinutes);
+  return !onDay.some(
+    (a) =>
+      a !== shift &&
+      a.employeeId === shift.employeeId &&
+      a.startMinutes < ende &&
+      startMinutes < a.endMinutes,
+  );
+}
+
 function moveShiftTo(shift: Shift, startMinutes: number): void {
   const presence = shift.endMinutes - shift.startMinutes;
   shift.startMinutes = startMinutes;
@@ -1756,7 +1992,12 @@ function arrangeForPeaks(blocks: DayBlocks, onDay: Shift[], peaks: readonly Peak
       if (onDay[i].endMinutes - onDay[i].startMinutes > first.endMinutes - first.startMinutes) {
         continue;
       }
+      if (!freiFuer(onDay, onDay[i], first.startMinutes)) continue;
       moveShiftTo(onDay[i], first.startMinutes);
+      if (!freiFuer(onDay, onDay[j], closerStart)) {
+        restore(starts);
+        continue;
+      }
       moveShiftTo(onDay[j], closerStart);
 
       // Alle übrigen Dienste greedy dorthin, wo sie am meisten helfen.
@@ -1765,6 +2006,7 @@ function arrangeForPeaks(blocks: DayBlocks, onDay: Shift[], peaks: readonly Peak
         let pick = onDay[k].startMinutes;
         let pickDeficit = Number.POSITIVE_INFINITY;
         for (const c of candidateStarts(onDay[k], blocks, peaks)) {
+          if (!freiFuer(onDay, onDay[k], c)) continue;
           moveShiftTo(onDay[k], c);
           const d = peakDeficit(onDay, frame, peaks);
           if (d < pickDeficit) {
@@ -1825,6 +2067,27 @@ function monthCapacity(
 }
 
 /** Fehlermeldung, die auch sagt WARUM es nicht aufgeht. */
+/**
+ * Die längste Schicht, die an einem NORMALEN offenen Tag dieses Monats
+ * überhaupt möglich ist – gemeint ist der kleinste dieser Werte.
+ *
+ * Erklärt, warum die Decke niedrig liegt: schließt der Laden mittags, ist der
+ * längste zusammenhängende Block kurz, und daran hängt alles Weitere.
+ */
+function laengsteSchichtImMonat(
+  dates: string[],
+  dayOf: (isoDate: string) => ResolvedDay,
+): number {
+  let kuerzeste = MAX_SHIFT_HOURS;
+  for (const d of dates) {
+    const day = dayOf(d);
+    if (day.closed) continue;
+    const moeglich = maxShiftHoursForWindow(windowLength(day));
+    if (moeglich > 0 && moeglich < kuerzeste) kuerzeste = moeglich;
+  }
+  return kuerzeste;
+}
+
 function buildUnmetMessage(
   state: SchedulerState,
   unmet: Employee[],
@@ -1874,14 +2137,24 @@ function buildUnmetMessage(
     );
   }
 
-  // maxMinutes ist eine OBERGRENZE (jeden erlaubten Tag die längste Schicht).
-  // Der greedy Scheduler erreicht sie nicht immer – daher als Decke formulieren.
+  // Warum die Decke so niedrig liegt, hängt am Tag, nicht an der 6-Tage-Regel.
+  // Die alte Meldung schob es auf die 6-Tage-Regel, obwohl die hier oft gar
+  // nicht greift – und behauptete "praktisch weniger", obwohl der Plan die
+  // Decke exakt erreicht. Beides führte in die Irre.
+  const laengsterBlock = laengsteSchichtImMonat(dates, dayOf);
+  const sechsTageGreift = full.maxDays < full.openDays;
+
   return (
     `Không xếp đủ định mức: ${missing}. ` +
-    `Tháng này có ${full.openDays} ngày mở cửa; do quy tắc tối đa 6 ngày làm ` +
-    `liên tiếp, mỗi người làm được nhiều nhất ${full.maxDays} ngày — trần lý ` +
-    `thuyết ${full.maxMinutes / 60}h/người, thực tế thấp hơn. ` +
-    `Hãy giảm định mức, nới khung giờ làm, bớt ngày đóng cửa, hoặc thêm người.`
+    `Tháng này có ${full.openDays} ngày mở cửa, ca dài nhất mỗi ngày cộng lại ` +
+    `được ${full.maxMinutes / 60}h — đó là trần của một người.` +
+    (laengsterBlock < MAX_SHIFT_HOURS
+      ? ` Trần thấp vì có ngày khung giờ bị cắt: ca dài nhất chỉ ${laengsterBlock}h.`
+      : "") +
+    (sechsTageGreift
+      ? ` Ngoài ra luật tối đa 6 ngày liên tiếp chỉ cho làm ${full.maxDays}/${full.openDays} ngày.`
+      : "") +
+    ` Hãy giảm định mức, nới khung giờ làm, bớt ngày đóng cửa, hoặc thêm người.`
   );
 }
 
@@ -2001,7 +2274,20 @@ export function generateSchedule(input: GenerateInput): Shift[] {
 
   const unmet = employees.filter((e) => state.remaining.get(e.id)! > 0);
   if (unmet.length > 0) {
-    throw new Error(buildUnmetMessage(state, unmet, dates, dayOf));
+    // Ein zu hohes Soll ist kein Grund, GAR KEINEN Plan zu liefern. Der
+    // Betrieb steht sonst mit leeren Händen da, obwohl fast alles verteilt
+    // werden konnte. Geliefert wird, was geht; wer sein Soll nicht erreicht,
+    // taucht in der Prüfung als Warnung auf (validateSchedule).
+    //
+    // Abgebrochen wird nur noch, wenn schon die Eingabe unmöglich ist – ein
+    // Soll unter der kürzesten Schicht oder ein Tag ohne nutzbares Fenster.
+    // Da hilft kein Teilplan, sondern nur eine Korrektur.
+    const hoffnungslos =
+      unmet.some((e) => e.targetMinutes > 0 && e.targetMinutes < MIN_SHIFT_MINUTES) ||
+      monthCapacity(dates, dayOf).maxDays === 0;
+    if (hoffnungslos) {
+      throw new Error(buildUnmetMessage(state, unmet, dates, dayOf));
+    }
   }
 
   repairDemand(state, employeesById);
@@ -2010,6 +2296,8 @@ export function generateSchedule(input: GenerateInput): Shift[] {
   // ... und der umgekehrte Fall: zu viele Leute in der Stoßzeit.
   repairPeakExcess(state, employeesById);
   balanceShiftTypes(state);
+  // Ganz zum Schluss: keine zwei Dienste einer Person zur selben Zeit.
+  fixSameEmployeeOverlaps(state);
 
   // Stabil sortieren: nach Datum, dann Startzeit, dann Mitarbeiter.
   state.shifts.sort(

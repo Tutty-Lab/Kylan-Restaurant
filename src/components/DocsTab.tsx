@@ -90,7 +90,12 @@ export function DocsTab() {
             Tối đa <b>9 giờ công</b> mỗi ngày cho một người —{" "}
             <b>riêng chủ quán 10 giờ</b>.
           </li>
-          <li>Mỗi người <b>một ca mỗi ngày</b>.</li>
+          <li>
+            <b>Ca gãy:</b> một người có thể làm <b>cả khung trưa lẫn khung tối</b> trong
+            cùng một ngày — mỗi khung nhiều nhất một ca, và hai ca không được chồng giờ.
+            Trước đây app chỉ cho một ca mỗi ngày (luật của quán khác, quán đó mở liền
+            mạch), khiến T3–T6 mỗi người chỉ dùng được 5 tiếng dù quán mở 10 tiếng rưỡi.
+          </li>
           <li>Không làm quá <b>6 ngày liên tiếp</b>.</li>
           <li>
             Mỗi người phải đạt <b>đúng định mức tháng</b> (Sollstunden) — không thừa, không thiếu.
