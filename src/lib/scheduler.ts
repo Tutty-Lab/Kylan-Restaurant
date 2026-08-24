@@ -204,8 +204,11 @@ const MITTAG: PeakWindow = {
 
 const ABEND: PeakWindow = {
   label: "Tối",
-  startMinutes: 17 * 60,
-  endMinutes: 22 * 60,
+  // Angabe des Betriebs: der Andrang liegt zwischen 18 und 21 Uhr, nicht über
+  // den ganzen Abend. Ein engeres Fenster heißt auch: die Obergrenze von fünf
+  // Personen gilt nur noch dort, davor und danach darf frei besetzt werden.
+  startMinutes: 18 * 60,
+  endMinutes: 21 * 60,
   minStaff: 1,
   maxStaff: 5,
 };
@@ -1213,12 +1216,36 @@ function ownerDayOk(state: SchedulerState, employeeId: string, isoDate: string, 
   return inWoche < OWNER_DAYS_PER_WEEK;
 }
 
+/**
+ * Die Arbeitstage einer Person, wenn EIN bestimmter Dienst wegfällt.
+ *
+ * Der Tag fällt nur dann heraus, wenn kein weiterer Dienst derselben Person an
+ * ihm hängt. Seit geteilte Dienste erlaubt sind, kann das vorkommen – und wer
+ * den Tag trotzdem austrägt, rechnet die Sechs-Tage-Regel zu günstig und
+ * genehmigt Ketten von sieben oder acht Tagen.
+ */
+function workedWithout(state: SchedulerState, shift: Shift): Set<string> {
+  const tage = new Set(state.worked.get(shift.employeeId)!);
+  const nochWelche = state.shifts.some(
+    (x) => x !== shift && x.employeeId === shift.employeeId && x.date === shift.date,
+  );
+  if (!nochWelche) tage.delete(shift.date);
+  return tage;
+}
+
 function removeShift(state: SchedulerState, shift: Shift): void {
   const ds = state.dateState.get(shift.date)!;
   ds.totalPaid -= shift.paidMinutes;
   if (shift.shiftType === "LATE") ds.latePaid -= shift.paidMinutes;
   ds.count -= 1;
-  state.worked.get(shift.employeeId)!.delete(shift.date);
+  // Der Tag zählt nur dann nicht mehr als Arbeitstag, wenn KEIN weiterer
+  // Dienst dieser Person an ihm hängt. Seit geteilte Dienste erlaubt sind, kann
+  // das vorkommen – und wer den Tag trotzdem austrägt, verliert ihn für die
+  // Sechs-Tage-Regel. Genau so entstanden acht Arbeitstage am Stück.
+  const nochWelche = state.shifts.some(
+    (x) => x !== shift && x.employeeId === shift.employeeId && x.date === shift.date,
+  );
+  if (!nochWelche) state.worked.get(shift.employeeId)!.delete(shift.date);
   if (isWeekend(shift.date)) {
     state.weekendCount.set(
       shift.employeeId,
@@ -1247,7 +1274,6 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
     for (const shift of [...state.shifts]) {
       const employee = employeesById.get(shift.employeeId)!;
       const from = shift.date;
-      const worked = state.worked.get(employee.id)!;
 
       let bestTarget: string | null = null;
       let bestDelta = -1e-6; // nur echte Verbesserungen
@@ -1263,9 +1289,8 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
         if (!ownerDayOk(state, employee.id, to, from)) continue;
         const day = state.dayOf(to);
         if (day.closed || spanFor(day, employee) < presence) continue; // zu / passt nicht
-        // 6-Tage-Regel prüfen, als ob "from" bereits entfernt wäre.
-        const trial = new Set(worked);
-        trial.delete(from);
+        // 6-Tage-Regel prüfen, als ob dieser Dienst schon weg wäre.
+        const trial = workedWithout(state, shift);
         if (consecutiveRunLengthWith(trial, to) > 6) continue;
 
         // Die Stoßzeit darf durch einen Umzug nicht schlechter besetzbar werden.
@@ -1346,18 +1371,14 @@ function canSwap(state: SchedulerState, a: Shift, b: Shift, allowSameEmployee = 
   if (sameEmployee && !allowSameEmployee) return false; // sonst wäre es ein Umzug
 
   if (!sameEmployee) {
-    const workedA = state.worked.get(a.employeeId)!;
-    const workedB = state.worked.get(b.employeeId)!;
     // Höchstens ein Dienst pro Mitarbeiter und Tag.
     if (!fitsOnDay(state, state.byId.get(a.employeeId)!, b.date, a.paidMinutes)) return false;
     if (!fitsOnDay(state, state.byId.get(b.employeeId)!, a.date, b.paidMinutes)) return false;
 
-    // 6-Tage-Regel für beide, jeweils ohne den eigenen alten Tag.
-    const trialA = new Set(workedA);
-    trialA.delete(a.date);
+    // 6-Tage-Regel für beide, jeweils ohne den eigenen alten Dienst.
+    const trialA = workedWithout(state, a);
     if (consecutiveRunLengthWith(trialA, b.date) > 6) return false;
-    const trialB = new Set(workedB);
-    trialB.delete(b.date);
+    const trialB = workedWithout(state, b);
     if (consecutiveRunLengthWith(trialB, a.date) > 6) return false;
   }
 
@@ -1477,8 +1498,6 @@ function trySwaps(state: SchedulerState, employeesById: Map<string, Employee>): 
 
       const empA = employeesById.get(a.employeeId)!;
       const empB = employeesById.get(b.employeeId)!;
-      const workedA = state.worked.get(empA.id)!;
-      const workedB = state.worked.get(empB.id)!;
       // Harte Regel: höchstens ein Dienst pro Mitarbeiter und Tag.
       if (!fitsOnDay(state, empA, b.date, a.paidMinutes)) continue;
       if (!fitsOnDay(state, empB, a.date, b.paidMinutes)) continue;
@@ -1495,12 +1514,10 @@ function trySwaps(state: SchedulerState, employeesById: Map<string, Employee>): 
       if (windowLength(dayA) < presenceFromPaid(b.paidMinutes)) continue;
       if (windowLength(dayB) < presenceFromPaid(a.paidMinutes)) continue;
 
-      // 6-Tage-Regel für beide prüfen, jeweils ohne den eigenen alten Tag.
-      const trialA = new Set(workedA);
-      trialA.delete(a.date);
+      // 6-Tage-Regel für beide prüfen, jeweils ohne den eigenen alten Dienst.
+      const trialA = workedWithout(state, a);
       if (consecutiveRunLengthWith(trialA, b.date) > 6) continue;
-      const trialB = new Set(workedB);
-      trialB.delete(b.date);
+      const trialB = workedWithout(state, b);
       if (consecutiveRunLengthWith(trialB, a.date) > 6) continue;
 
       // Auch der Tausch darf die Stoßzeit nicht abräumen: a landet auf b.date
@@ -1560,11 +1577,19 @@ function trySwaps(state: SchedulerState, employeesById: Map<string, Employee>): 
 /** Dreht NUR Früh/Spät um. Dauer bleibt gleich => Monats-Soll bleibt exakt. */
 function retypeShift(state: SchedulerState, shift: Shift, type: TemplateType): void {
   if (shift.shiftType === type) return;
-  const block = blockForShift(
-    state.dayOf(shift.date).blocks,
-    presenceFromPaid(shift.paidMinutes),
-    type,
-  );
+  const day = state.dayOf(shift.date);
+  const praesenz = presenceFromPaid(shift.paidMinutes);
+
+  // Für den Chef gilt der ganze Rahmen, nicht ein einzelner Block – wie in
+  // makeShift. Fehlte das hier, landete seine 8-Stunden-Schicht am Anfang des
+  // Abendblocks und endete um 25:30, also weit nach Ladenschluss: der Block ist
+  // nur fünf Stunden lang, die Schicht mit Pause aber achteinhalb.
+  const chef = state.byId.get(shift.employeeId)?.isOwner === true;
+  const block = chef ? frameOf(day.blocks) : blockForShift(day.blocks, praesenz, type);
+
+  // Passt die Schicht nirgends hin, bleibt sie lieber liegen, als aus dem
+  // Fenster zu ragen.
+  if (block.endMinutes - block.startMinutes < praesenz) return;
   const tpl = getShiftTemplate(
     shift.paidMinutes / 60,
     type,

@@ -104,7 +104,10 @@ export function DocsTab() {
             Mỗi người phải đạt <b>đúng định mức tháng</b> (Sollstunden) — không thừa, không thiếu.
           </li>
           <li>
-            <b>Không có giờ nghỉ</b> — theo yêu cầu của chị Cúc. Giờ có mặt bằng đúng giờ công.
+            <b>Giờ nghỉ theo luật Đức</b> (§ 4 ArbZG): làm <b>trên 6 tiếng</b> nghỉ{" "}
+            <b>30 phút</b>, <b>trên 9 tiếng</b> nghỉ <b>45 phút</b>. Giờ nghỉ{" "}
+            <b>cộng thêm</b> vào thời gian có mặt, không trừ vào giờ công — ca 9 giờ công
+            chiếm 9 tiếng rưỡi.
           </li>
           <li>
             Mỗi ca phải nằm <b>gọn trong một khung mở cửa</b>. T3–T6 quán mở hai khung
@@ -112,7 +115,7 @@ export function DocsTab() {
             khung dài nhất trong ngày chỉ 5 giờ.
           </li>
           <li>
-            <b>Chủ quán</b> (ô tick trong tab Nhân viên) làm <b>10 giờ mỗi ngày</b>,{" "}
+            <b>Chủ quán</b> (ô tick trong tab Nhân viên) làm <b>ca dài nhất trong ngày</b>,{" "}
             <b>5 ngày mỗi tuần</b> và{" "}
             <b>không làm thứ 7</b>. Giờ của chủ tính vào giờ quán như mọi người, kể cả khi
             đếm số người trong giờ cao điểm.
@@ -221,9 +224,14 @@ export function DocsTab() {
           đủ</b> ở các ngày khác.
         </p>
         <p>
-          Tiệm này <b>không có giờ nghỉ</b>, nên giờ có mặt bằng đúng giờ công: ca 9 giờ công
-          chiếm đúng 9 tiếng. Bảng dưới đọc thẳng từ mã nguồn — nếu sau này đặt lại quy tắc
-          nghỉ thì bảng tự đổi theo.
+          Giờ nghỉ không trừ vào giờ công mà kéo dài thời gian có mặt: ca 9 giờ công chiếm
+          9 tiếng rưỡi. Bảng dưới đọc thẳng từ mã nguồn.
+          <br />
+          <span className="text-slate-500">
+            Vì thế <b>ca 10 tiếng của chủ quán không còn xếp được</b>: 10 tiếng cộng 45 phút
+            nghỉ là 10 tiếng 45, mà khung T3–T6 chỉ có 10 tiếng rưỡi (11:30–22:00). Ca dài
+            nhất giờ là <b>9 tiếng</b>.
+          </span>
         </p>
         <div className="overflow-x-auto">
           <table className="text-sm border-collapse">

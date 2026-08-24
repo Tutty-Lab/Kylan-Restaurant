@@ -49,7 +49,7 @@ export type SeedMonth = {
 
 /** Juni 2026 – die Besetzung laut Chefin. */
 const JUNE_2026: Employee[] = [
-  { ...makeEmployee("vz-1", "Thu Cúc Đinh (chủ quán)", "VOLLZEIT", 200), isOwner: true },
+  { ...makeEmployee("vz-1", "Thu Cúc Đinh (chủ quán)", "VOLLZEIT", 180), isOwner: true },
   makeEmployee("tz-1", "Teilzeit 1", "TEILZEIT", 150),
   makeEmployee("tz-2", "Teilzeit 2", "TEILZEIT", 86),
   makeEmployee("tz-3", "Teilzeit 3", "TEILZEIT", 86),
@@ -59,7 +59,7 @@ const JUNE_2026: Employee[] = [
 
 /** Juli 2026 – eine Teilzeitkraft im Urlaub. */
 const JULY_2026: Employee[] = [
-  { ...makeEmployee("vz-1", "Thu Cúc Đinh (chủ quán)", "VOLLZEIT", 200), isOwner: true },
+  { ...makeEmployee("vz-1", "Thu Cúc Đinh (chủ quán)", "VOLLZEIT", 180), isOwner: true },
   makeEmployee("tz-1", "Teilzeit 1", "TEILZEIT", 150),
   makeEmployee("tz-2", "Teilzeit 2", "TEILZEIT", 86),
   makeEmployee("tz-3", "Teilzeit 3", "TEILZEIT", 86),
@@ -68,7 +68,7 @@ const JULY_2026: Employee[] = [
 
 /** August 2026 – volle Besetzung. */
 const AUGUST_2026: Employee[] = [
-  { ...makeEmployee("vz-1", "Thu Cúc Đinh (chủ quán)", "VOLLZEIT", 200), isOwner: true },
+  { ...makeEmployee("vz-1", "Thu Cúc Đinh (chủ quán)", "VOLLZEIT", 180), isOwner: true },
   makeEmployee("tz-1", "Teilzeit 1", "TEILZEIT", 150),
   makeEmployee("tz-2", "Teilzeit 2", "TEILZEIT", 86),
   makeEmployee("tz-3", "Teilzeit 3", "TEILZEIT", 86),

@@ -97,18 +97,18 @@ export type ShiftToken = {
 export const OWNER_DAYS_PER_WEEK = 5;
 
 /**
- * Der Chef arbeitet 10 Stunden am Tag – alle anderen höchstens 9.
+ * Obergrenze für die Schichtlänge des Chefs.
  *
- * Und der Chef ist der Einzige, dessen Dienst über die MITTAGSSCHLIESSUNG
- * hinweg läuft: Di–Fr ist von 15:00 bis 17:00 zu, für ihn zählt trotzdem der
- * ganze Rahmen 11:30–22:00 als ein Stück.
+ * Er ist der Einzige, dessen Dienst über die MITTAGSSCHLIESSUNG hinweg läuft:
+ * Di–Fr ist von 15:00 bis 17:00 zu, für ihn zählt trotzdem der ganze Rahmen
+ * 11:30–22:00 als ein Stück.
  *
- * Das ist keine Bequemlichkeit, sondern die einzige Lesart, in der die Angabe
- * des Betriebs aufgeht. 200 h im Monat bei fünf Tagen die Woche und ohne
- * Samstag heißt: Di–Fr plus Sonntag. Bliebe er in EINEM Block, wären das
- * 4 × 5 h + 9 h = 29 h die Woche, also rund 126 h im Monat – 200 h wären
- * unerreichbar. Mit 10-Stunden-Tagen über den ganzen Rahmen sind es 49 h die
- * Woche und rund 212 h im Monat, und 200 h gehen auf.
+ * Der Wert steht auf 10, praktisch erreicht er das aber nicht mehr: seit die
+ * gesetzliche Pause gilt, braucht eine 10-Stunden-Schicht 45 Minuten Pause und
+ * damit 10,75 h Anwesenheit – der Rahmen bietet nur 10,5 h. Übrig bleiben
+ * 9 h + 30 min = 9,5 h. Die 10 bleibt hier stehen, damit die Grenze nicht
+ * doppelt gepflegt werden muss; wer das Fenster später verlängert, bekommt die
+ * zehnte Stunde automatisch zurück.
  */
 export const OWNER_MAX_SHIFT_HOURS = 10;
 

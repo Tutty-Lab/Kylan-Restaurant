@@ -14,7 +14,7 @@ Dorotheenstraße 186, 22299 Hamburg. Abgeleitet aus der VietHaus-App
   Fenstern dürfen **höchstens 5 Personen** stehen, den Chef mitgezählt.
   Angabe des Betriebs: "wenn viel los ist höchstens 5, normal 3–4" – die 3–4
   sind eine Beschreibung, keine Vorschrift.
-- **Keine Pause**: `calculatePause` gibt immer 0 zurück.
+- **Pause nach § 4 ArbZG**: über 6 h = 30 Min, über 9 h = 45 Min.
 - **Keine Ober- oder Untergrenze für die Anzahl der Beschäftigten** und keine
   eigene Stundendecke für Minijobs. Andere Filialen haben so etwas, weil deren
   Betrieb es ausdrücklich gesagt hat; hier wurde nur die heutige Besetzung
@@ -111,14 +111,20 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   seine 200 h im Monat aufgehen: bliebe er in EINEM Block, wären es
   4 × 5 h + 9 h = 29 h die Woche und damit rund 126 h im Monat.
 - Höchstens **6 aufeinanderfolgende** Arbeitstage.
-- **Keine Pause** (`calculatePause` gibt 0 zurück) – so die Vorgabe der
-  Chefin. Damit ist `presence = paid`, eine 9-h-Schicht belegt genau 9 h.
+- **Pause** (`calculatePause`) nach § 4 ArbZG: über 6 h = 30 Min, über 9 h =
+  45 Min. Das ArbZG ist Bundesrecht und gilt in Hamburg wie überall; andere
+  Filialen geben mehr, mehr ist erlaubt. `presence = paid + pause`.
+  - FOLGE: der **10-Stunden-Tag des Chefs geht nicht mehr auf**. 10 h + 45 Min
+    sind 10,75 h Anwesenheit, der Rahmen Di–Fr bietet nur 10,5 h. Die längste
+    Schicht ist damit 9 h, und sein Monats-Soll in den Testdaten fiel von
+    200 h auf 180 h.
 - Schichtlängen: **3 bis 9 Stunden**. Vollzeit bekommt 4..9 h, Teilzeit 3..9 h.
   Etwa jede zehnte Schicht wird bewusst auf 4–5 h gekürzt
   (`SHORT_SHIFT_CHANCE`), damit die Pläne nicht mechanisch aussehen – aber nur,
   wenn der Tag keinen langen Dienst mehr für die Stoßzeit braucht.
 - **Stoßzeiten** (`PEAK_WINDOWS_BY_WEEKDAY`, je Wochentag verschieden):
-  Di–Fr der Mittagsblock 11:30–15:00, Sa/So der Abend 17:00–22:00. Dort sind
+  Di–Fr der Mittagsblock 11:30–15:00, Sa/So der Abend 18:00–21:00 (Angabe des
+  Betriebs: der Andrang liegt dort, nicht über den ganzen Abend). Dort sind
   **höchstens 5 Personen** erlaubt und mindestens 1. Geprüft wird über die
   **ganze Spanne**, nicht an einem einzelnen Zeitpunkt.
   - Die Obergrenze greift schon bei der **Wahl der Schichtlänge**

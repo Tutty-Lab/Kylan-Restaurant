@@ -25,16 +25,23 @@ export function minutesToTime(totalMinutes: number): string {
 }
 
 /**
- * Pausenregel (Vorgabe des Chefs, VietHaus Restaurant): "Không có pause" –
- * es wird KEINE Pause von der Arbeitszeit abgezogen. Anwesenheit = bezahlte
- * Zeit, pauseMinutes ist immer 0.
+ * Pausenregel nach dem Gesetz (§ 4 ArbZG): über 6 Stunden 30 Minuten, über
+ * 9 Stunden 45 Minuten.
  *
- * Hinweis: Damit steht auf dem Stundenzettel keine Pause. Das ist die Ansage
- * des Betriebs; das Arbeitszeitgesetz verlangt ab mehr als 6 Stunden an sich
- * 30 Minuten. Eine spätere Umstellung betrifft nur diese eine Funktion – alle
- * Zeit- und Schichtberechnungen leiten sich davon ab.
+ * Das ArbZG ist BUNDESRECHT und gilt in Hamburg wie überall – eine eigene
+ * Regelung je Bundesland gibt es nicht. Andere Filialen geben MEHR (VietHaus
+ * 60 min ab 8 h); mehr ist erlaubt, weniger nicht.
+ *
+ * Die Pause zählt NICHT zum Soll, verlängert aber die Anwesenheit:
+ * presence = paid + pause.
+ *
+ * FOLGE für den Chef: sein 10-Stunden-Tag geht damit nicht mehr auf.
+ * 10 h + 45 min sind 10,75 h Anwesenheit, der Rahmen Di–Fr ist aber nur
+ * 11:30–22:00, also 10,5 h. Die längste Schicht ist damit 9 h.
  */
-export function calculatePause(_paidMinutes: number): number {
+export function calculatePause(paidMinutes: number): number {
+  if (paidMinutes > 9 * 60) return 45;
+  if (paidMinutes > 6 * 60) return 30;
   return 0;
 }
 

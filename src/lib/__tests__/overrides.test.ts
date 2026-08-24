@@ -24,7 +24,8 @@ describe("Ausnahmen je Datum (Overrides)", () => {
   });
 
   it("halber Tag: Mitarbeiter arbeiten KÜRZERE Schichten (nicht frei), Soll exakt", () => {
-    // 10:30–16:00 = 330 Min Fenster -> Schichten bis 5 h passen.
+    // 10:30–16:00 = 330 Min Fenster. Mit Pause tragen 330 Minuten eine
+    // 5-Stunden-Schicht (300 Min, noch pausenfrei), aber keine längere.
     const overrides: OverrideMap = {
       "2026-08-10": {
         date: "2026-08-10",
