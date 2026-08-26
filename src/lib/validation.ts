@@ -2,7 +2,12 @@
 // Validierung des Dienstplans gegen alle geforderten Regeln.
 // ============================================================================
 
-import { OWNER_MAX_SHIFT_HOURS, type Employee, type Shift } from "../types";
+import {
+  AZUBI_MAX_MONTHLY_HOURS,
+  OWNER_MAX_SHIFT_HOURS,
+  type Employee,
+  type Shift,
+} from "../types";
 import { calculatePause } from "./time";
 import { maxConsecutiveRun } from "./consecutive";
 
@@ -53,6 +58,21 @@ export function validateSchedule(
 ): ValidationResult {
   const errors: ValidationError[] = [];
   const employeeById = new Map(employees.map((e) => [e.id, e] as const));
+
+  // Azubi: höchstens 43 Stunden im Monat. Eine WARNUNG, kein Riegel – ob mehr
+  // erlaubt ist, steht im Ausbildungsvertrag und nicht in diesem Programm.
+  for (const emp of employees) {
+    if (emp.employmentType !== "AZUBI") continue;
+    const stunden = emp.targetMinutes / 60;
+    if (stunden > AZUBI_MAX_MONTHLY_HOURS) {
+      errors.push({
+        employeeId: emp.id,
+        severity: "warning",
+        message:
+          `${emp.name}: học nghề ${stunden}h/tháng, vượt mức ${AZUBI_MAX_MONTHLY_HOURS}h.`,
+      });
+    }
+  }
 
   // Für Kylan gibt es bewusst KEINE Zahlengrenzen bei der Belegschaft –
   // weder für die Anzahl der Beschäftigten noch eine eigene Stundendecke für

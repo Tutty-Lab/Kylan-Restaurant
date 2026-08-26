@@ -28,7 +28,13 @@ import {
 import { getShiftTemplate, type TemplateType } from "./shifts";
 import { consecutiveRunLengthWith, seededRandom } from "./consecutive";
 import { weekStartOf } from "./weeks";
-import { OWNER_DAYS_PER_WEEK, OWNER_FREE_WEEKDAY, OWNER_MAX_SHIFT_HOURS } from "../types";
+import {
+  AZUBI_EVENING_END,
+  AZUBI_EVENING_START,
+  OWNER_DAYS_PER_WEEK,
+  OWNER_FREE_WEEKDAY,
+  OWNER_MAX_SHIFT_HOURS,
+} from "../types";
 import { presenceFromPaid } from "./time";
 import {
   effectiveWeekdayKey,
@@ -98,17 +104,45 @@ function windowLength(day: ResolvedDay): number {
 }
 
 /**
+ * Welche Öffnungsblöcke stehen dieser Person an diesem Tag offen?
+ *
+ * Für alle außer dem Azubi sind das die Blöcke des Tages. Der Azubi kommt
+ * unter der Woche nur abends (18–22 Uhr); an Samstag und Sonntag gilt die
+ * Einschränkung nicht, dort ist der ganze Tag offen.
+ *
+ * Geschnitten wird der BLOCK, nicht die Schicht: aus dem Abendblock 17–22 wird
+ * für ihn 18–22. Damit greifen alle weiteren Rechnungen – Schichtlänge,
+ * Kapazität, Anordnung – automatisch auf das engere Fenster zu, statt dass an
+ * jeder Stelle eine Sonderprüfung stehen müsste.
+ */
+function blocksFor(day: ResolvedDay, employee: Employee | undefined, isoDate: string): DayBlocks {
+  if (!employee || employee.employmentType !== "AZUBI") return day.blocks;
+
+  const wochentag = weekdayKeyOf(parseIsoDate(isoDate));
+  if (wochentag === "saturday" || wochentag === "sunday") return day.blocks;
+
+  const abends: DayBlocks = [];
+  for (const b of day.blocks) {
+    const von = Math.max(b.startMinutes, AZUBI_EVENING_START);
+    const bis = Math.min(b.endMinutes, AZUBI_EVENING_END);
+    if (bis - von >= MIN_SHIFT_MINUTES) abends.push({ startMinutes: von, endMinutes: bis });
+  }
+  return abends;
+}
+
+/**
  * Wie lang ist der Tag FÜR DIESE PERSON? Für den Chef der ganze Rahmen, für
  * alle anderen der längste einzelne Öffnungsblock (siehe
  * OWNER_MAX_SHIFT_HOURS).
  */
-function spanFor(day: ResolvedDay, employee?: Employee): number {
+function spanFor(day: ResolvedDay, employee?: Employee, isoDate?: string): number {
   if (day.closed) return 0;
   if (employee?.isOwner) {
     const rahmen = frameOf(day.blocks);
     return rahmen.endMinutes - rahmen.startMinutes;
   }
-  return longestBlock(day.blocks);
+  const bloecke = isoDate ? blocksFor(day, employee, isoDate) : day.blocks;
+  return bloecke.length === 0 ? 0 : longestBlock(bloecke);
 }
 
 /** Längste zulässige Schicht dieser Person in Stunden. */
@@ -157,6 +191,9 @@ const ALLOWED_HOURS: Record<Employee["employmentType"], readonly number[]> = {
   // Minijob ist arbeitsrechtlich eine Form der Teilzeit – gleiche Längen.
   // Begrenzt wird er über das Monats-Soll, nicht über die Schichtlänge.
   MINIJOB: [3, 4, 5, 6, 7, 8, 9],
+  // Azubi: unter der Woche nur 18–22 Uhr, also höchstens 4 h; am Wochenende
+  // ist der Tag offen, deshalb bleiben längere Schichten zulässig.
+  AZUBI: [3, 4, 5, 6, 7, 8, 9],
 };
 
 /**
@@ -331,6 +368,7 @@ const PREFERRED_HOURS: Record<Employee["employmentType"], number> = {
   VOLLZEIT: MAX_SHIFT_HOURS,
   TEILZEIT: MAX_SHIFT_HOURS,
   MINIJOB: MAX_SHIFT_HOURS,
+  AZUBI: MAX_SHIFT_HOURS,
 };
 
 /** Größte Schichtlänge (Stunden), deren Anwesenheit noch ins Fenster passt (0 = keine). */
@@ -777,12 +815,17 @@ function makeShift(
   // rufen makeShift ohne vorgegebenen Block, und der nahm bis dahin einfach den
   // ersten passenden – also wieder den Mittag, obwohl dort schon ein Dienst
   // derselben Person lag. Heraus kamen zwei Dienste 11:30–14:30 am selben Tag.
+  // Fuer den Azubi sind das nur die Abendfenster (siehe blocksFor).
+  const erlaubt = blocksFor(day, employee, isoDate);
   const belegt = blocksUsedOn(state, employee.id, isoDate);
-  const frei = day.blocks.filter((_, i) => !belegt.has(i));
+  const frei = erlaubt.filter((b) => !belegt.has(day.blocks.findIndex((x) => x.startMinutes === b.startMinutes && x.endMinutes === b.endMinutes)));
   // Ist wirklich nichts frei, bleibt nur der längste Block – dann greift
   // hinterher fixSameEmployeeOverlaps. Vorher wurde hier auf den ERSTEN Block
   // zurückgefallen, und der war meist genau der schon belegte.
-  const auswahl = frei.length > 0 ? frei : [blockForShift(day.blocks, presenceFromPaid(paidMinutes), type)];
+  const auswahl =
+    frei.length > 0
+      ? frei
+      : [blockForShift(erlaubt.length > 0 ? erlaubt : day.blocks, presenceFromPaid(paidMinutes), type)];
 
   const block =
     forceBlock ??
@@ -910,24 +953,29 @@ function fitsOnDay(
 
   if (employee.isOwner) {
     if (belegt.size > 0) return false;
-    return spanFor(day, employee) >= praesenz;
+    return spanFor(day, employee, isoDate) >= praesenz;
   }
   if (belegt.has(-1)) return false; // fremder Dienst über den ganzen Rahmen
   if (shiftCountOn(state, employee.id, isoDate) >= day.blocks.length) return false;
   if (dayHoursOf(state, employee.id, isoDate) + paidMinutes / 60 > maxHoursFor(employee)) {
     return false;
   }
-  return day.blocks.some(
-    (b, i) => !belegt.has(i) && b.endMinutes - b.startMinutes >= praesenz,
-  );
+  const erlaubt = blocksFor(day, employee, isoDate);
+  return erlaubt.some((b) => {
+    const i = day.blocks.findIndex((x) => x.startMinutes <= b.startMinutes && x.endMinutes >= b.endMinutes);
+    return !belegt.has(i) && b.endMinutes - b.startMinutes >= praesenz;
+  });
 }
 
 /** Erster freier Öffnungsblock dieser Person an diesem Tag. */
 function freeBlockOn(state: SchedulerState, employee: Employee, isoDate: string): DayWindow | null {
   const day = state.dayOf(isoDate);
   const belegt = blocksUsedOn(state, employee.id, isoDate);
-  for (let i = 0; i < day.blocks.length; i++) {
-    if (!belegt.has(i)) return day.blocks[i];
+  // Nur Bloecke, die dieser Person offenstehen – beim Azubi also unter der
+  // Woche allein das Abendfenster.
+  for (const b of blocksFor(day, employee, isoDate)) {
+    const i = day.blocks.findIndex((x) => x.startMinutes <= b.startMinutes && x.endMinutes >= b.endMinutes);
+    if (!belegt.has(i)) return b;
   }
   return null;
 }
@@ -958,7 +1006,7 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     if (trial.has(isoDate)) continue;
     const day = state.dayOf(isoDate);
     if (day.closed) continue;
-    if (maxShiftHoursForWindow(spanFor(day, employee)) === 0) continue;
+    if (maxShiftHoursForWindow(spanFor(day, employee, isoDate)) === 0) continue;
     if (consecutiveRunLengthWith(trial, isoDate) > 6) continue;
     trial.add(isoDate); // belegt – zählt für die Kette der folgenden Tage mit
     usableDays += 1;
@@ -1001,7 +1049,7 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     const freierBlock = freeBlockOn(state, employee, isoDate);
 
     let maxHours = Math.min(
-      maxShiftHoursForWindow(spanFor(day, employee)),
+      maxShiftHoursForWindow(spanFor(day, employee, isoDate)),
       maxHoursFor(employee),
       tagesRest, // ein zweiter Dienst darf die Tagesgrenze nicht reißen
     );
@@ -1057,11 +1105,21 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     // in den 3-h-Mittagsblock, verbrennt sie einen ihrer wenigen möglichen
     // Tage und das Monats-Soll geht am Ende nicht auf. Den Mittag füllt, wer
     // es sich leisten kann – die Kräfte mit kleinem Soll.
+    // Ein leerer Block hilft nur, wenn die Person dort überhaupt arbeiten darf.
+    // Sonst wurde der Azubi in den Mittagsblock geschickt, den er gar nicht
+    // bedienen darf.
+    const blockErlaubt =
+      leererBlock !== null &&
+      blocksFor(day, employee, isoDate).some(
+        (b) => b.startMinutes <= leererBlock.startMinutes && b.endMinutes >= leererBlock.endMinutes,
+      );
+
     const fuellDenBlock =
       // Für den Chef nicht: sein Dienst läuft ohnehin über den ganzen Rahmen und
       // deckt damit beide Blöcke ab. Ihn auf einen Block zu stutzen nähme ihm
       // genau die Länge, für die es die Sonderregel gibt.
       !employee.isOwner &&
+      blockErlaubt &&
       leererBlock !== null &&
       blockStunden >= 3 &&
       blockStunden < maxHours &&
@@ -1293,7 +1351,7 @@ function repairDemand(state: SchedulerState, employeesById: Map<string, Employee
         if (!fitsOnDay(state, employee, to, shift.paidMinutes)) continue;
         if (!ownerDayOk(state, employee.id, to, from)) continue;
         const day = state.dayOf(to);
-        if (day.closed || spanFor(day, employee) < presence) continue; // zu / passt nicht
+        if (day.closed || spanFor(day, employee, to) < presence) continue; // zu / passt nicht
         // 6-Tage-Regel prüfen, als ob dieser Dienst schon weg wäre.
         const trial = workedWithout(state, shift);
         if (consecutiveRunLengthWith(trial, to) > 6) continue;
@@ -1393,10 +1451,10 @@ function canSwap(state: SchedulerState, a: Shift, b: Shift, allowSameEmployee = 
 
   // Die getauschten Längen müssen in das jeweilige Fenster passen.
   // Die Spanne richtet sich nach der Person, die den Dienst übernimmt.
-  if (spanFor(state.dayOf(a.date), state.byId.get(b.employeeId)) < presenceFromPaid(b.paidMinutes)) {
+  if (spanFor(state.dayOf(a.date), state.byId.get(b.employeeId), a.date) < presenceFromPaid(b.paidMinutes)) {
     return false;
   }
-  if (spanFor(state.dayOf(b.date), state.byId.get(a.employeeId)) < presenceFromPaid(a.paidMinutes)) {
+  if (spanFor(state.dayOf(b.date), state.byId.get(a.employeeId), b.date) < presenceFromPaid(a.paidMinutes)) {
     return false;
   }
 
@@ -1589,8 +1647,14 @@ function retypeShift(state: SchedulerState, shift: Shift, type: TemplateType): v
   // makeShift. Fehlte das hier, landete seine 8-Stunden-Schicht am Anfang des
   // Abendblocks und endete um 25:30, also weit nach Ladenschluss: der Block ist
   // nur fünf Stunden lang, die Schicht mit Pause aber achteinhalb.
-  const chef = state.byId.get(shift.employeeId)?.isOwner === true;
-  const block = chef ? frameOf(day.blocks) : blockForShift(day.blocks, praesenz, type);
+  const wer = state.byId.get(shift.employeeId);
+  const chef = wer?.isOwner === true;
+  // Beim Umdrehen gelten dieselben Fenster wie beim Anlegen. Ohne das wurde aus
+  // der Abendschicht des Azubi wieder eine Frühschicht am Blockanfang – Mi ab
+  // 17:00, also eine Stunde zu früh.
+  const offen = blocksFor(day, wer, shift.date);
+  if (offen.length === 0) return;
+  const block = chef ? frameOf(day.blocks) : blockForShift(offen, praesenz, type);
 
   // Passt die Schicht nirgends hin, bleibt sie lieber liegen, als aus dem
   // Fenster zu ragen.
@@ -1781,7 +1845,10 @@ function fixSameEmployeeOverlaps(state: SchedulerState): void {
           const belegt = new Set(liste.filter((x) => x !== dieser).map(blockVon));
           const praesenz = dieser.endMinutes - dieser.startMinutes;
           const ziel = day.blocks.find(
-            (b, idx) => !belegt.has(idx) && b.endMinutes - b.startMinutes >= praesenz,
+            (b, idx) =>
+              !belegt.has(idx) &&
+              b.endMinutes - b.startMinutes >= praesenz &&
+              zeitErlaubt(dieser, b.startMinutes),
           );
           if (ziel) {
             moveShiftTo(dieser, ziel.startMinutes);
@@ -1861,6 +1928,11 @@ function concentrateEveningShifts(state: SchedulerState): void {
     const aufSpitze = (s: Shift) => {
       const start = EVENING_RUSH_END - (s.endMinutes - s.startMinutes);
       if (start < block.startMinutes || start >= s.startMinutes) return; // passt nicht / nicht früher
+      // Der Azubi darf unter der Woche erst ab 18:00 – ein Zug auf 17:00 wäre
+      // zwar näher an der Spitze, aber für ihn schlicht verboten.
+      const wer = state.byId.get(s.employeeId);
+      const erlaubt = wer ? blocksFor(day, wer, isoDate) : day.blocks;
+      if (!erlaubt.some((b) => start >= b.startMinutes && s.endMinutes <= b.endMinutes)) return;
       if (!freiFuer(onDay, s, start)) return;
       const vorher = s.startMinutes;
       const gut = peakDeficit(onDay, day.window, peaks);
@@ -1925,6 +1997,7 @@ function tightenSplitShifts(state: SchedulerState): void {
         const gut = peakDeficit(onDay, frameOf(day.blocks), peaks);
         for (let start = frueheste; start < vorher; start += 30) {
           if (start + dauer > block.endMinutes) break;
+          if (!zeitErlaubt(spaeter, start)) continue;
           moveShiftTo(spaeter, start);
           if (peakDeficit(onDay, frameOf(day.blocks), peaks) <= gut) break; // passt
           moveShiftTo(spaeter, vorher); // Besetzung leidet – zurück
@@ -2041,7 +2114,32 @@ function balanceShiftTypes(state: SchedulerState): void {
  * zwei Dienste derselben Person übereinandergelegt (zweimal 11:30–14:30 am
  * selben Tag). Diese Prüfung verhindert das an jeder Stelle, die verschiebt.
  */
+/**
+ * Wer im laufenden Monat Azubi ist.
+ *
+ * Die Umräum-Pässe (arrangeForPeaks, concentrateEveningShifts, …) fassen
+ * Dienste an, ohne die Person zu kennen – sie sehen nur Zeiten. Ohne dieses
+ * Verzeichnis rutschte der Azubi dort wieder in den Mittag zurück, obwohl er
+ * beim Anlegen sauber im Abendfenster saß.
+ */
+let azubiIds: ReadonlySet<string> = new Set();
+
+/**
+ * Darf dieser Dienst zu dieser Zeit stehen?
+ *
+ * Für alle außer dem Azubi immer ja. Der Azubi darf Mo–Fr nur 18:00–22:00; am
+ * Wochenende gilt die normale Öffnungszeit.
+ */
+function zeitErlaubt(shift: Shift, startMinutes: number): boolean {
+  if (!azubiIds.has(shift.employeeId)) return true;
+  const tag = weekdayKeyOf(parseIsoDate(shift.date));
+  if (tag === "saturday" || tag === "sunday") return true;
+  const ende = startMinutes + (shift.endMinutes - shift.startMinutes);
+  return startMinutes >= AZUBI_EVENING_START && ende <= AZUBI_EVENING_END;
+}
+
 function freiFuer(onDay: Shift[], shift: Shift, startMinutes: number): boolean {
+  if (!zeitErlaubt(shift, startMinutes)) return false;
   const ende = startMinutes + (shift.endMinutes - shift.startMinutes);
   return !onDay.some(
     (a) =>
@@ -2332,6 +2430,7 @@ function buildUnmetMessage(
 export function generateSchedule(input: GenerateInput): Shift[] {
   shiftIdCounter = 0;
   const { year, month, workHours, employees } = input;
+  azubiIds = new Set(employees.filter((e) => e.employmentType === "AZUBI").map((e) => e.id));
   const holidays = input.holidays ?? publicHolidays(year);
   const overrides = input.overrides ?? {};
 

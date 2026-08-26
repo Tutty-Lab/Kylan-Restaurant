@@ -10,7 +10,7 @@ import type { DateOverride, WorkHoursConfig } from "./lib/workHours";
  * bei der Schichtplanung auch genauso behandelt – die Trennung dient der
  * Obergrenze und der Belegschaftsstruktur, nicht der Planung selbst.
  */
-export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB";
+export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB" | "AZUBI";
 
 /**
  * Für Kylan gibt es BEWUSST keine Zahlengrenzen bei der Belegschaft:
@@ -92,6 +92,23 @@ export type ShiftToken = {
   employeeId: string;
   paidMinutes: number;
 };
+
+/**
+ * Auszubildende: höchstens 43 Stunden im Monat. Wird das überschritten, warnt
+ * die App – gesperrt wird nichts, denn ob mehr erlaubt ist, steht im
+ * Ausbildungsvertrag und nicht in diesem Programm.
+ */
+export const AZUBI_MAX_MONTHLY_HOURS = 43;
+
+/**
+ * Zeitfenster, in dem ein Azubi an einem WOCHENTAG arbeiten darf: 18–22 Uhr.
+ *
+ * Vorgabe des Betriebs: der Azubi kommt unter der Woche nur abends, dazu am
+ * Wochenende. Am Samstag und Sonntag gilt die Einschränkung NICHT – dort darf
+ * er über den ganzen Tag eingeteilt werden.
+ */
+export const AZUBI_EVENING_START = 18 * 60;
+export const AZUBI_EVENING_END = 22 * 60;
 
 /** So viele Tage je Woche arbeitet der Chef. */
 export const OWNER_DAYS_PER_WEEK = 5;

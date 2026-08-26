@@ -4,6 +4,7 @@ import {
   WEEKDAY_LABELS_VI,
   type WeekdayKey,
 } from "../lib/demand";
+import { AZUBI_MAX_MONTHLY_HOURS } from "../types";
 import { SHIFT_LENGTHS } from "../lib/shifts";
 import { PEAK_WINDOWS_BY_WEEKDAY } from "../lib/scheduler";
 import { calculatePause, minutesToTime, presenceFromPaid } from "../lib/time";
@@ -130,6 +131,18 @@ export function DocsTab() {
           <li>
             <b>Không giới hạn</b> số nhân viên, cũng không có trần giờ riêng cho Minijob.
             Các tiệm khác có vì chủ nói rõ; ở đây chỉ nêu đội hình hiện tại.
+          </li>
+          <li>
+            <b>Học nghề (Azubi)</b>: trong tuần <b>chỉ xếp ca tối 18:00–22:00</b>, cuối tuần
+            (<b>T7 và CN</b>) thì xếp bình thường trong giờ mở cửa. Tối đa{" "}
+            <b>{AZUBI_MAX_MONTHLY_HOURS}h/tháng</b>; đặt định mức cao hơn vẫn tạo được lịch,
+            chỉ hiện <b>cảnh báo</b> chứ không chặn.
+            <br />
+            <span className="text-slate-500">
+              Ngày trong tuần quán mở 11:30–15:00 và 17:00–22:00, nhưng khung của học nghề
+              cắt vào 18:00–22:00, nên ca dài nhất trong tuần là 4h. Muốn nhiều giờ hơn thì
+              phải rơi vào T7/CN.
+            </span>
           </li>
         </ul>
       </Section>

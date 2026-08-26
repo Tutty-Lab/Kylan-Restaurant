@@ -14,6 +14,10 @@ export function employmentLabelVi(type: EmploymentType): string {
       return "Bán thời gian";
     case "MINIJOB":
       return "Minijob";
+    case "AZUBI":
+      return "Học nghề";
+    case "AZUBI":
+      return "Học nghề";
   }
 }
 
@@ -26,6 +30,8 @@ export function employmentShortVi(type: EmploymentType): string {
       return "BT";
     case "MINIJOB":
       return "MJ";
+    case "AZUBI":
+      return "HN";
   }
 }
 
@@ -38,5 +44,7 @@ export function employmentLabelDe(type: EmploymentType): string {
       return "Teilzeit";
     case "MINIJOB":
       return "Minijob";
+    case "AZUBI":
+      return "Auszubildender";
   }
 }

@@ -15,6 +15,10 @@ Dorotheenstraße 186, 22299 Hamburg. Abgeleitet aus der VietHaus-App
   Angabe des Betriebs: "wenn viel los ist höchstens 5, normal 3–4" – die 3–4
   sind eine Beschreibung, keine Vorschrift.
 - **Pause nach § 4 ArbZG**: über 6 h = 30 Min, über 9 h = 45 Min.
+- **Azubi**: Mo–Fr **nur abends 18:00–22:00**, am Wochenende (Sa/So) zu jeder
+  Öffnungszeit. **Höchstens 43 h im Monat** – mehr blockiert den Plan nicht,
+  gibt aber eine **Warnung**. Unter der Woche ist sein längster Dienst damit
+  4 h; alles darüber muss aufs Wochenende fallen.
 - **Keine Ober- oder Untergrenze für die Anzahl der Beschäftigten** und keine
   eigene Stundendecke für Minijobs. Andere Filialen haben so etwas, weil deren
   Betrieb es ausdrücklich gesagt hat; hier wurde nur die heutige Besetzung
