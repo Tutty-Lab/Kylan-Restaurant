@@ -151,9 +151,9 @@ export function DocsTab() {
             <span className="text-slate-500">
               Tính theo <b>ngày làm việc</b> đúng như luật Đức (§ 3 BUrlG): đi làm 1 tiếng
               cũng hết trọn một ngày phép. Mức quy định một năm:{" "}
-              <b>toàn thời gian và bán thời gian {URLAUB_DAYS_PER_YEAR.VOLLZEIT} ngày</b>,{" "}
-              Minijob {URLAUB_DAYS_PER_YEAR.MINIJOB} ngày, học nghề{" "}
-              {URLAUB_DAYS_PER_YEAR.AZUBI} ngày. Vượt mức chỉ <b>cảnh báo</b> chứ không
+              <b>toàn thời gian {URLAUB_DAYS_PER_YEAR.VOLLZEIT} ngày</b>, bán thời gian{" "}
+              {URLAUB_DAYS_PER_YEAR.TEILZEIT} ngày, Minijob {URLAUB_DAYS_PER_YEAR.MINIJOB} ngày,
+              học nghề {URLAUB_DAYS_PER_YEAR.AZUBI} ngày. Vượt mức chỉ <b>cảnh báo</b> chứ không
               chặn: nghỉ nhiều hơn mức tối thiểu của luật là được phép, có thể ghi trong
               hợp đồng hoặc chuyển từ năm trước sang. Đếm theo <b>cả năm</b> chứ không phải
               từng tháng, vì quy định là quy định năm. App <b>không bao giờ tự chọn</b>{" "}

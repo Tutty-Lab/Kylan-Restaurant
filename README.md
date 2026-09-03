@@ -26,8 +26,9 @@ Dorotheenstraße 186, 22299 Hamburg. Abgeleitet aus der VietHaus-App
   (`VacationPicker`), mit dem Wochentag in derselben Zeile; geschlossene Tage
   sind gesperrt. Gerechnet wird in **Arbeitstagen** (§ 3 BUrlG: wer eine Stunde
   kommt, hat einen ganzen Arbeitstag verbraucht), Anspruch 24 Tage für
-  Voll- und Teilzeit, 8 für Minijob, 12 für den Azubi, geprüft über das ganze
-  **Jahr**. Mehr ist erlaubt – es gibt eine **Warnung**, keinen Riegel.
+  Vollzeit, **16 für Teilzeit** (vier Arbeitstage die Woche, 24 × 4/6), 8 für
+  Minijob, 12 für den Azubi, geprüft über das ganze **Jahr**. Mehr ist erlaubt
+  – es gibt eine **Warnung**, keinen Riegel.
 - **Keine Ober- oder Untergrenze für die Anzahl der Beschäftigten** und keine
   eigene Stundendecke für Minijobs. Andere Filialen haben so etwas, weil deren
   Betrieb es ausdrücklich gesagt hat; hier wurde nur die heutige Besetzung

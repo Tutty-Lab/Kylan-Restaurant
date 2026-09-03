@@ -20,9 +20,11 @@ export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB" | "AZUBI";
  * Stunde kommt, hat trotzdem einen ganzen Arbeitstag verbraucht. Bei fünf
  * Tagen die Woche sind es 20 Tage im Jahr, bei sechs Tagen 24.
  *
- * Kylan hat Montag zu und öffnet sechs Tage; für die Stammkräfte stehen
- * deshalb 24 Tage. Minijob und Azubi arbeiten an weniger Tagen der Woche und
- * haben entsprechend weniger.
+ * Kylan hat Montag zu und öffnet sechs Tage; eine Vollzeitkraft arbeitet
+ * sechs Tage die Woche und hat deshalb 24 Tage. Teilzeit, Minijob und Azubi
+ * arbeiten an weniger Tagen der Woche, und weil der Anspruch an den Arbeitstagen
+ * je Woche hängt, ist er entsprechend kleiner: Teilzeit rechnet mit vier Tagen
+ * die Woche (24 × 4/6 = 16).
  *
  * Wird das überschritten, WARNT die App – sie hindert aber niemanden: mehr
  * Urlaub als der gesetzliche Mindestanspruch ist erlaubt, er kann vertraglich
@@ -30,7 +32,8 @@ export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB" | "AZUBI";
  */
 export const URLAUB_DAYS_PER_YEAR: Record<EmploymentType, number> = {
   VOLLZEIT: 24,
-  TEILZEIT: 24,
+  // Teilzeit: vier Arbeitstage die Woche => 24 × 4/6.
+  TEILZEIT: 16,
   MINIJOB: 8,
   // Der Azubi kommt unter der Woche nur abends und sonst am Wochenende.
   AZUBI: 12,
