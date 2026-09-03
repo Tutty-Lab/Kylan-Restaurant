@@ -36,7 +36,7 @@ export const URLAUB_DAYS_PER_YEAR: Record<EmploymentType, number> = {
   TEILZEIT: 16,
   MINIJOB: 8,
   // Der Azubi kommt unter der Woche nur abends und sonst am Wochenende.
-  AZUBI: 12,
+  AZUBI: 8,
 };
 
 /**
