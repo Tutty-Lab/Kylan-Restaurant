@@ -8,6 +8,7 @@ import {
   type Employee,
   type Shift,
 } from "../types";
+import { vacationDaysInYear, vacationEntitlement } from "./availability";
 import { calculatePause } from "./time";
 import { maxConsecutiveRun } from "./consecutive";
 
@@ -55,9 +56,29 @@ const MAX_CONSECUTIVE_DAYS = 6;
 export function validateSchedule(
   employees: Employee[],
   shifts: Shift[],
+  /** Jahr des geplanten Monats – nötig für die Urlaubsprüfung. */
+  year: number = new Date().getFullYear(),
 ): ValidationResult {
   const errors: ValidationError[] = [];
   const employeeById = new Map(employees.map((e) => [e.id, e] as const));
+
+  // Urlaub. Der Anspruch gilt fürs JAHR, geprüft wird deshalb gegen alle
+  // eingetragenen Tage dieses Jahres – nicht nur gegen den geplanten Monat.
+  // Bleibt eine WARNUNG: mehr Urlaub als der gesetzliche Mindestanspruch ist
+  // erlaubt, er kann vertraglich vereinbart oder übertragen sein.
+  for (const emp of employees) {
+    const anspruch = vacationEntitlement(emp);
+    const genommen = vacationDaysInYear(emp, year);
+    if (genommen > anspruch) {
+      errors.push({
+        employeeId: emp.id,
+        severity: "warning",
+        message:
+          `${emp.name}: đã nghỉ phép ${genommen} ngày trong năm ${year}, ` +
+          `vượt ${anspruch} ngày theo quy định.`,
+      });
+    }
+  }
 
   // Azubi: höchstens 43 Stunden im Monat. Eine WARNUNG, kein Riegel – ob mehr
   // erlaubt ist, steht im Ausbildungsvertrag und nicht in diesem Programm.

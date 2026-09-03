@@ -19,6 +19,15 @@ Dorotheenstraße 186, 22299 Hamburg. Abgeleitet aus der VietHaus-App
   Öffnungszeit. **Höchstens 43 h im Monat** – mehr blockiert den Plan nicht,
   gibt aber eine **Warnung**. Unter der Woche ist sein längster Dienst damit
   4 h; alles darüber muss aufs Wochenende fallen.
+- **Urlaub** je Person, einzutragen im Tab *Nhân viên*. Die App wählt die Tage
+  **nie selbst** – wer wann frei nimmt, ist eine Absprache im Betrieb.
+  Eingetragene Tage werden beim Planen ausgespart, beim Chef genauso wie bei
+  allen anderen. Ausgewählt wird über eine Liste der Monatstage zum Ankreuzen
+  (`VacationPicker`), mit dem Wochentag in derselben Zeile; geschlossene Tage
+  sind gesperrt. Gerechnet wird in **Arbeitstagen** (§ 3 BUrlG: wer eine Stunde
+  kommt, hat einen ganzen Arbeitstag verbraucht), Anspruch 24 Tage für
+  Voll- und Teilzeit, 8 für Minijob, 12 für den Azubi, geprüft über das ganze
+  **Jahr**. Mehr ist erlaubt – es gibt eine **Warnung**, keinen Riegel.
 - **Keine Ober- oder Untergrenze für die Anzahl der Beschäftigten** und keine
   eigene Stundendecke für Minijobs. Andere Filialen haben so etwas, weil deren
   Betrieb es ausdrücklich gesagt hat; hier wurde nur die heutige Besetzung

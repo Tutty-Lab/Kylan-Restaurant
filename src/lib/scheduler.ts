@@ -27,6 +27,7 @@ import {
 } from "./demand";
 import { getShiftTemplate, type TemplateType } from "./shifts";
 import { consecutiveRunLengthWith, seededRandom } from "./consecutive";
+import { mayWorkOn } from "./availability";
 import { weekStartOf } from "./weeks";
 import {
   AZUBI_EVENING_END,
@@ -1006,6 +1007,10 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
     if (trial.has(isoDate)) continue;
     const day = state.dayOf(isoDate);
     if (day.closed) continue;
+    // Urlaubstage zaehlen hier NICHT mit. Sonst rechnet das Tempo mit Tagen,
+    // die es nicht gibt: die Schichten fallen zu kurz aus, und am Monatsende
+    // fehlen Stunden, fuer die kein Tag mehr uebrig ist.
+    if (!mayWorkOn(employee, isoDate)) continue;
     if (maxShiftHoursForWindow(spanFor(day, employee, isoDate)) === 0) continue;
     if (consecutiveRunLengthWith(trial, isoDate) > 6) continue;
     trial.add(isoDate); // belegt – zählt für die Kette der folgenden Tage mit
@@ -1023,6 +1028,7 @@ function placeOneShift(state: SchedulerState, employee: Employee): boolean {
   for (const isoDate of state.dates) {
     const day = state.dayOf(isoDate);
     if (day.closed) continue; // Betriebsruhe -> kein Dienst
+    if (!mayWorkOn(employee, isoDate)) continue; // eingetragener Urlaub
     // Höchstens ein Dienst je BLOCK statt je Tag – siehe dayRoomLeft.
     const tagesRest = dayRoomLeft(state, employee, isoDate);
     if (tagesRest < 3) continue;
@@ -1267,6 +1273,13 @@ function dateCost(state: SchedulerState, isoDate: string): number {
  * Wochenrechnung nicht mehr mit.
  */
 function ownerDayOk(state: SchedulerState, employeeId: string, isoDate: string, statt?: string): boolean {
+  // Urlaub gilt fuer JEDEN, nicht nur fuer den Chef. Er steht hier, weil dies
+  // das eine Tor ist, durch das jedes Verschieben und jeder Tausch muss – in
+  // einer anderen Filiale stand eine solche Regel nur beim ersten Verteilen,
+  // und die Reparaturlaeufe danach haben sie klaglos wieder aufgehoben.
+  const wer = state.byId.get(employeeId);
+  if (wer && !mayWorkOn(wer, isoDate)) return false;
+
   if (!state.owners.has(employeeId)) return true;
   if (weekdayKeyOf(parseIsoDate(isoDate)) === OWNER_FREE_WEEKDAY) return false;
 

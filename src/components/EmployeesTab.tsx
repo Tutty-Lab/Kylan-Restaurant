@@ -1,7 +1,15 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { UseScheduleReturn } from "../hooks/useSchedule";
-import type { EmploymentType } from "../types";
+import type { Employee, EmploymentType } from "../types";
 import { splitTargetHours } from "../lib/splitTargetHours";
+import { isDayClosed } from "../lib/workHours";
+import { publicHolidays } from "../lib/holidays";
+import {
+  vacationDatesInMonth,
+  vacationDaysInYear,
+  vacationEntitlement,
+} from "../lib/availability";
+import { VacationPicker } from "./VacationPicker";
 
 const inputClass =
   "rounded border border-slate-300 px-2 py-1 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
@@ -24,6 +32,17 @@ function splitInfo(targetHours: number, type: EmploymentType): { ok: boolean; te
 
 export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
   const { schedule, addEmployee, updateEmployee, removeEmployee } = store;
+
+  const holidays = useMemo(() => publicHolidays(schedule.year), [schedule.year]);
+  const overrides = useMemo(
+    () => Object.fromEntries(schedule.dateOverrides.map((o) => [o.date, o])),
+    [schedule.dateOverrides],
+  );
+  const isClosed = useCallback(
+    (iso: string) => isDayClosed(schedule.workHours, iso, holidays, overrides),
+    [schedule.workHours, holidays, overrides],
+  );
+
   const [name, setName] = useState("");
   const [type, setType] = useState<EmploymentType>("VOLLZEIT");
   const [hours, setHours] = useState(176);
@@ -89,10 +108,8 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
             const info = splitInfo(emp.targetMinutes / 60, emp.employmentType);
             const tooMany = emp.targetMinutes / 60 > WARN_HOURS;
             return (
-              <div
-                key={emp.id}
-                className="rounded-lg border border-slate-200 p-3 flex flex-col sm:flex-row sm:items-end gap-3"
-              >
+              <div key={emp.id} className="rounded-lg border border-slate-200 p-3 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-end gap-3">
                 <label className="flex flex-col sm:flex-1">
                   <span className="text-xs text-slate-500 mb-1 sm:hidden">Tên</span>
                   <input
@@ -163,11 +180,96 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
                     Xoá
                   </button>
                 </div>
+                </div>
+
+                <Urlaub
+                  emp={emp}
+                  year={schedule.year}
+                  month={schedule.month}
+                  updateEmployee={updateEmployee}
+                  isClosed={isClosed}
+                />
               </div>
             );
           })}
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Urlaub einer Person: die Tage stehen fest im Betrieb, die App verteilt sie
+ * nicht selbst. Eingetragene Tage werden beim Planen ausgespart.
+ *
+ * Die Liste ist eingeklappt, solange niemand sie braucht – einunddreißig
+ * Zeilen mal sieben Mitarbeiter wären sonst eine sehr lange Seite.
+ */
+function Urlaub({
+  emp,
+  year,
+  month,
+  updateEmployee,
+  isClosed,
+}: {
+  emp: Employee;
+  year: number;
+  month: number;
+  updateEmployee: (id: string, patch: Partial<Employee>) => void;
+  isClosed: (iso: string) => boolean;
+}) {
+  const [offen, setOffen] = useState(false);
+
+  const imJahr = vacationDaysInYear(emp, year);
+  const anspruch = vacationEntitlement(emp);
+  const imMonat = vacationDatesInMonth(emp, year, month);
+  const zuViel = imJahr > anspruch;
+
+  const toggle = (iso: string) => {
+    const jetzt = emp.vacationDates ?? [];
+    updateEmployee(emp.id, {
+      vacationDates: jetzt.includes(iso)
+        ? jetzt.filter((d) => d !== iso)
+        : [...jetzt, iso].sort(),
+    });
+  };
+
+  return (
+    <div className="border-t border-slate-100 pt-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <button
+          type="button"
+          onClick={() => setOffen((v) => !v)}
+          className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50"
+        >
+          Nghỉ phép {offen ? "▲" : "▼"}
+        </button>
+        <span className={zuViel ? "text-amber-700 font-medium" : "text-slate-500"}>
+          {imJahr}/{anspruch} ngày trong năm {year}
+          {zuViel && " — vượt quy định"}
+        </span>
+        {imMonat.length > 0 && (
+          <span className="text-slate-500">
+            · tháng này: {imMonat.map((d) => Number(d.slice(8))).join(", ")}
+          </span>
+        )}
+      </div>
+
+      {offen && (
+        <div className="mt-2">
+          <VacationPicker
+            year={year}
+            month={month}
+            selected={emp.vacationDates ?? []}
+            onToggle={toggle}
+            isClosed={isClosed}
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            Tính theo <b>ngày làm việc</b> (§ 3 BUrlG): đi làm 1 tiếng cũng hết một ngày phép.
+            Vượt quy định thì chỉ <b>cảnh báo</b>, vẫn tạo được lịch.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }

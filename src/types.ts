@@ -13,6 +13,30 @@ import type { DateOverride, WorkHoursConfig } from "./lib/workHours";
 export type EmploymentType = "VOLLZEIT" | "TEILZEIT" | "MINIJOB" | "AZUBI";
 
 /**
+ * Jahresurlaub in ARBEITSTAGEN, nicht in Stunden.
+ *
+ * So rechnet das Bundesurlaubsgesetz (§ 3 BUrlG): der Anspruch hängt daran, an
+ * wie vielen Tagen die Woche jemand arbeitet, nicht wie lange. Wer nur eine
+ * Stunde kommt, hat trotzdem einen ganzen Arbeitstag verbraucht. Bei fünf
+ * Tagen die Woche sind es 20 Tage im Jahr, bei sechs Tagen 24.
+ *
+ * Kylan hat Montag zu und öffnet sechs Tage; für die Stammkräfte stehen
+ * deshalb 24 Tage. Minijob und Azubi arbeiten an weniger Tagen der Woche und
+ * haben entsprechend weniger.
+ *
+ * Wird das überschritten, WARNT die App – sie hindert aber niemanden: mehr
+ * Urlaub als der gesetzliche Mindestanspruch ist erlaubt, er kann vertraglich
+ * vereinbart oder aus dem Vorjahr übertragen sein.
+ */
+export const URLAUB_DAYS_PER_YEAR: Record<EmploymentType, number> = {
+  VOLLZEIT: 24,
+  TEILZEIT: 24,
+  MINIJOB: 8,
+  // Der Azubi kommt unter der Woche nur abends und sonst am Wochenende.
+  AZUBI: 12,
+};
+
+/**
  * Für Kylan gibt es BEWUSST keine Zahlengrenzen bei der Belegschaft:
  * weder eine Obergrenze für die Anzahl der Beschäftigten noch eine eigene
  * Stundendecke für Minijobs.
@@ -44,6 +68,18 @@ export type Employee = {
   isOwner?: boolean;
   /** Monatliches Soll in Minuten (Integer). 176 h => 10560. */
   targetMinutes: number;
+  /**
+   * Urlaubstage als ISO-Daten "yyyy-MM-dd", über das GANZE Jahr.
+   *
+   * Bewusst das ganze Jahr und nicht nur der geplante Monat: der Anspruch ist
+   * ein Jahresanspruch, und ob jemand seine Tage überschreitet, lässt sich nur
+   * am Jahr ablesen. Der Scheduler nimmt sich daraus die Tage des Monats, den
+   * er gerade plant.
+   *
+   * Die Tage trägt IMMER der Nutzer ein. Der Automat darf keinen Urlaub
+   * verteilen – wer wann frei nimmt, ist eine Absprache im Betrieb.
+   */
+  vacationDates?: string[];
 };
 
 export type Shift = {
