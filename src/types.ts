@@ -3,6 +3,7 @@
 // niemals mit Fließkomma-Stunden.
 // ============================================================================
 
+import type { WeekdayKey } from "./lib/demand";
 import type { DateOverride, WorkHoursConfig } from "./lib/workHours";
 
 /**
@@ -83,6 +84,13 @@ export type Employee = {
    * verteilen – wer wann frei nimmt, ist eine Absprache im Betrieb.
    */
   vacationDates?: string[];
+  /**
+   * Wochentage, an denen diese Person eingeplant werden darf. Fehlt/leer =
+   * jeder Tag ist möglich (keine Einschränkung).
+   */
+  availableWeekdays?: WeekdayKey[];
+  /** Höchstzahl der Arbeitstage je Woche. Fehlt = nur die Sechs-Tage-Regel. */
+  maxDaysPerWeek?: number;
 };
 
 export type Shift = {
