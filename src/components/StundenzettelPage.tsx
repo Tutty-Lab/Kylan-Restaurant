@@ -96,14 +96,10 @@ export function StundenzettelPage({
         </thead>
         <tbody>
           {rows.map((d) => {
-            const dienste = byDate.get(d) ?? [];
+            const dienste = [...(byDate.get(d) ?? [])].sort(
+              (a, b) => a.startMinutes - b.startMinutes,
+            );
             const s = dienste[0];
-            // Bei zwei Diensten stehen beide Zeitspannen untereinander; Pause
-            // und Stunden werden addiert, damit die Summe unten stimmt.
-            const zeiten = (feld: "startMinutes" | "endMinutes") =>
-              dienste.map((x) => minutesToTime(x[feld])).join(" / ");
-            const pauseGesamt = dienste.reduce((a, x) => a + x.pauseMinutes, 0);
-            const bezahltGesamt = dienste.reduce((a, x) => a + x.paidMinutes, 0);
             const wd = WEEKDAY_LABELS_DE[weekdayKeyOf(parseIsoDate(d))];
             const holiday = holidayNames.get(d);
             const closed = closedByDate.get(d);
@@ -118,17 +114,82 @@ export function StundenzettelPage({
             } else {
               bemerkung = "Frei";
             }
+            const rowCls = isWeekend || holiday || closed ? "bg-slate-50" : "";
+
+            // Ngày nghỉ hoặc ngày chỉ có MỘT ca: một dòng như cũ.
+            if (dienste.length <= 1) {
+              return (
+                <tr key={d} className={rowCls}>
+                  <Td>{format(parseIsoDate(d), "dd.MM.yyyy")}</Td>
+                  <Td>{wd}</Td>
+                  <Td className="text-center">{s ? minutesToTime(s.startMinutes) : ""}</Td>
+                  <Td className="text-center">{s ? minutesToTime(s.endMinutes) : ""}</Td>
+                  <Td className="text-center">{s ? `${s.pauseMinutes} Min` : ""}</Td>
+                  <Td className="text-center">
+                    {s ? minutesToDecimalHours(s.paidMinutes) : "0,00"}
+                  </Td>
+                  <Td className="text-left text-slate-500">{bemerkung}</Td>
+                </tr>
+              );
+            }
+
+            // Ngày có HAI ca (trưa và tối): mỗi ca một dòng riêng trong ô, có
+            // vạch kẻ ngăn – không nối bằng dấu "/" nữa, vì đọc ra không biết
+            // giờ nào đi với giờ nào.
             return (
-              <tr key={d} className={isWeekend || holiday || closed ? "bg-slate-50" : ""}>
-                <Td>{format(parseIsoDate(d), "dd.MM.yyyy")}</Td>
-                <Td>{wd}</Td>
-                <Td className="text-center">{s ? zeiten("startMinutes") : ""}</Td>
-                <Td className="text-center">{s ? zeiten("endMinutes") : ""}</Td>
-                <Td className="text-center">{s ? `${pauseGesamt} Min` : ""}</Td>
-                <Td className="text-center">
-                  {s ? minutesToDecimalHours(bezahltGesamt) : "0,00"}
+              <tr key={d} className={rowCls}>
+                <Td className="align-middle">{format(parseIsoDate(d), "dd.MM.yyyy")}</Td>
+                <Td className="align-middle">{wd}</Td>
+                <Td noPadding className="text-center align-middle">
+                  {dienste.map((x, i) => (
+                    <div
+                      key={i}
+                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
+                    >
+                      {minutesToTime(x.startMinutes)}
+                    </div>
+                  ))}
                 </Td>
-                <Td className="text-left text-slate-500">{bemerkung}</Td>
+                <Td noPadding className="text-center align-middle">
+                  {dienste.map((x, i) => (
+                    <div
+                      key={i}
+                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
+                    >
+                      {minutesToTime(x.endMinutes)}
+                    </div>
+                  ))}
+                </Td>
+                <Td noPadding className="text-center align-middle">
+                  {dienste.map((x, i) => (
+                    <div
+                      key={i}
+                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
+                    >
+                      {x.pauseMinutes} Min
+                    </div>
+                  ))}
+                </Td>
+                <Td noPadding className="text-center align-middle">
+                  {dienste.map((x, i) => (
+                    <div
+                      key={i}
+                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
+                    >
+                      {minutesToDecimalHours(x.paidMinutes)}
+                    </div>
+                  ))}
+                </Td>
+                <Td noPadding className="text-left text-slate-500 align-middle">
+                  {dienste.map((_, i) => (
+                    <div
+                      key={i}
+                      className={`py-[3px] px-2 ${i > 0 ? "border-t border-slate-300 shift-split-divider" : ""}`}
+                    >
+                      {i === 0 && bemerkung ? bemerkung : "\u00A0"}
+                    </div>
+                  ))}
+                </Td>
               </tr>
             );
           })}
@@ -203,13 +264,19 @@ function Td({
   children,
   className = "",
   colSpan,
+  noPadding,
 }: {
   children?: React.ReactNode;
   className?: string;
   colSpan?: number;
+  /** Bei geteilten Tagen bringt jeder Streifen seinen eigenen Abstand mit. */
+  noPadding?: boolean;
 }) {
   return (
-    <td colSpan={colSpan} className={`border border-slate-300 px-2 py-[3px] ${className}`}>
+    <td
+      colSpan={colSpan}
+      className={`border border-slate-300 ${noPadding ? "" : "px-2 py-[3px]"} ${className}`}
+    >
       {children}
     </td>
   );

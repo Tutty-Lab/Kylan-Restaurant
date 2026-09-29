@@ -42,6 +42,11 @@ body {
 }
 
 
+/* Đường kẻ phân tách giữa ca trưa và ca tối trong cùng 1 ngày */
+.stundenzettel-table .shift-split-divider {
+  border-top: 1px solid #cbd5e1 !important;
+}
+
 /* ===================== Druck: Stundenzettel ===================== */
 /* @page MUSS auf oberster Ebene stehen, NICHT in @media print geschachtelt:
    Safari/iOS ignorieren ein verschachteltes @page und drucken dann doch die

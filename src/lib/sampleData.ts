@@ -1,8 +1,10 @@
 // ============================================================================
-// Beispieldaten: die heutige Besetzung von VietHaus, Summe = 606 bezahlte Stunden.
+// Beispieldaten: die heutige Besetzung von Kylan, Summe = 606 bezahlte Stunden.
+// Firmenname und Anschrift kommen aus company.ts – nur dort stehen sie.
 // ============================================================================
 
 import type { Employee, Schedule } from "../types";
+import { COMPANY_ADDRESS, COMPANY_NAME } from "./company";
 import { DEFAULT_WORK_HOURS } from "./workHours";
 
 export function makeEmployee(
@@ -29,8 +31,8 @@ export const SAMPLE_EMPLOYEES: Employee[] = [
 
 export function createSampleSchedule(): Schedule {
   return {
-    companyName: "VietHaus Restaurant",
-    address: "Herrengasse 19, 01744 Dippoldiswalde",
+    companyName: COMPANY_NAME,
+    address: COMPANY_ADDRESS,
     year: 2026,
     month: 8, // August
     workHours: structuredClone(DEFAULT_WORK_HOURS),
