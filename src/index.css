@@ -42,6 +42,26 @@ body {
 }
 
 
+/* ===================== Kẻ bảng Stundenzettel & Lịch ===================== */
+/* Dùng border-collapse: separate và border-spacing: 0 để đảm bảo 100% không
+   bị lỗi mất nét kẻ viền trong Safari iOS và khi in ấn. */
+.stundenzettel-table {
+  width: 100% !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  border-top: 1.5px solid #475569 !important;
+  border-left: 1.5px solid #475569 !important;
+}
+
+.stundenzettel-table th,
+.stundenzettel-table td {
+  border-right: 1.5px solid #475569 !important;
+  border-bottom: 1.5px solid #475569 !important;
+  border-top: none !important;
+  border-left: none !important;
+  box-sizing: border-box !important;
+}
+
 /* Đường kẻ phân tách giữa ca trưa và ca tối trong cùng 1 ngày */
 .stundenzettel-table .shift-split-divider {
   border-top: 1px solid #cbd5e1 !important;
