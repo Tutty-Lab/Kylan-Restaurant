@@ -6,7 +6,7 @@ Dorotheenstraße 186, 22299 Hamburg. Abgeleitet aus der VietHaus-App
 **Vorgaben der Chefin:**
 
 - **Montag geschlossen.**
-- **Di–Fr zwei getrennte Blöcke:** 11:30–15:00 und 17:00–22:00. Der längste
+- **Di–Fr zwei getrennte Blöcke:** 11:00–15:00 und 17:00–22:00. Der längste
   zusammenhängende Block ist damit 5 h – das ist die härteste Grenze der
   ganzen Planung, siehe unten.
 - **Sa/So durchgehend** 13:00–22:00, **Feiertage** 15:00–22:00.
@@ -116,12 +116,12 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   abends gearbeitet wird.
   - Die LÜCKE zwischen zwei Diensten wird so klein wie möglich gehalten
     (`tightenSplitShifts`) – im Normalfall genau die Schließzeit. Ohne das
-    entstand 11:30–14:30 und dann erst 19:00–22:00: sechs bezahlte Stunden, für
+    entstand 11:00–14:30 und dann erst 19:00–22:00: sechs bezahlte Stunden, für
     die jemand von halb zwölf bis zehn im Dienst ist, mit zwei Wegen. Nur wenn
     das engere Rücken die Stoßzeit schlechter besetzt, bleibt die Lücke.
 - **Der Chef ist die Ausnahme**: 10 Stunden am Tag (`OWNER_MAX_SHIFT_HOURS`),
   und sein Dienst läuft über die Mittagsschließung hinweg – für ihn zählt der
-  ganze Rahmen 11:30–22:00 als ein Stück. Das ist die einzige Lesart, in der
+  ganze Rahmen 11:00–22:00 als ein Stück. Das ist die einzige Lesart, in der
   seine 200 h im Monat aufgehen: bliebe er in EINEM Block, wären es
   4 × 5 h + 9 h = 29 h die Woche und damit rund 126 h im Monat.
 - Höchstens **6 aufeinanderfolgende** Arbeitstage.
@@ -137,7 +137,7 @@ werden direkt aus den Konstanten gerendert und können daher nicht veralten.
   (`SHORT_SHIFT_CHANCE`), damit die Pläne nicht mechanisch aussehen – aber nur,
   wenn der Tag keinen langen Dienst mehr für die Stoßzeit braucht.
 - **Stoßzeiten** (`PEAK_WINDOWS_BY_WEEKDAY`, je Wochentag verschieden):
-  Di–Fr der Mittagsblock 11:30–15:00, Sa/So der Abend 18:00–21:00 (Angabe des
+  Di–Fr der Mittagsblock 11:00–15:00, Sa/So der Abend 18:00–21:00 (Angabe des
   Betriebs: der Andrang liegt dort, nicht über den ganzen Abend). Dort sind
   **höchstens 5 Personen** erlaubt und mindestens 1. Geprüft wird über die
   **ganze Spanne**, nicht an einem einzelnen Zeitpunkt.

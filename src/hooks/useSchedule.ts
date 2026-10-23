@@ -19,6 +19,8 @@ import {
   type OverrideMap,
 } from "../lib/workHours";
 import { COMPANY_ADDRESS, COMPANY_NAME } from "../lib/company";
+import { isKylanDebug } from "../lib/reviewMode";
+import reviewData from "../lib/kylanReviewData.json";
 
 /**
  * Steht in diesem Stand überhaupt etwas? Maßstab sind Mitarbeiter und
@@ -75,6 +77,12 @@ function newEmployeeId(): string {
 export function useSchedule() {
   const [schedule, setSchedule] = useState<Schedule>(() => {
     const persisted = loadState();
+    if (!persisted?.schedule && isKylanDebug) {
+      const initial = emptySchedule();
+      initial.employees = structuredClone(reviewData.employees) as Employee[];
+      initial.shifts = generateSchedule(initial);
+      return initial;
+    }
     return normalizeSchedule(persisted?.schedule);
   });
   const [passwordHash, setPasswordHash] = useState<string | undefined>(

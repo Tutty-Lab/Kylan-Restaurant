@@ -117,7 +117,7 @@ describe.each(runs)("Seed-Monat: $seed.label", ({ seed, shifts, analysis }) => {
 
   it("plant keine Schicht außerhalb des Arbeitszeit-Fensters", () => {
     for (const s of shifts) {
-      expect(s.startMinutes).toBeGreaterThanOrEqual(11 * 60 + 30);
+      expect(s.startMinutes).toBeGreaterThanOrEqual(11 * 60);
       expect(s.endMinutes).toBeLessThanOrEqual(22 * 60);
     }
   });

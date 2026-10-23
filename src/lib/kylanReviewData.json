@@ -1,0 +1,143 @@
+{
+  "employees": [
+    {
+      "id": "emp-1787556699543-895293",
+      "name": "Bui Ba Viet",
+      "targetMinutes": 5100,
+      "vacationDates": [
+        "2026-09-06"
+      ],
+      "employmentType": "TEILZEIT"
+    },
+    {
+      "id": "emp-1787556712591-633461",
+      "name": "Thai Anh Nguyen",
+      "targetMinutes": 5100,
+      "vacationDates": [
+        "2026-09-09",
+        "2026-09-10",
+        "2026-09-11"
+      ],
+      "employmentType": "TEILZEIT"
+    },
+    {
+      "id": "emp-1787556742468-268222",
+      "name": "Tan Chuong Phan",
+      "isOwner": false,
+      "targetMinutes": 9000,
+      "employmentType": "TEILZEIT"
+    },
+    {
+      "id": "emp-1787556763485-288368",
+      "name": "Thao Van Do",
+      "targetMinutes": 10200,
+      "vacationDates": [
+        "2026-09-12",
+        "2026-09-13",
+        "2026-09-15",
+        "2026-09-16"
+      ],
+      "employmentType": "VOLLZEIT"
+    },
+    {
+      "id": "emp-1787556779542-239277",
+      "name": "Thi Dieu Linh Dinh",
+      "targetMinutes": 2520,
+      "employmentType": "MINIJOB"
+    },
+    {
+      "id": "emp-1787556974820-89346",
+      "name": "Duy Phuong Nguyen",
+      "targetMinutes": 5160,
+      "employmentType": "TEILZEIT"
+    },
+    {
+      "id": "emp-1787557007750-812282",
+      "name": "Thi Thu Cuc Dinh",
+      "isOwner": true,
+      "targetMinutes": 10200,
+      "employmentType": "VOLLZEIT"
+    }
+  ],
+  "workHours": {
+    "holiday": [
+      {
+        "endMinutes": 1320,
+        "startMinutes": 900
+      }
+    ],
+    "perWeekday": {
+      "friday": [
+        {
+          "endMinutes": 900,
+          "startMinutes": 660
+        },
+        {
+          "endMinutes": 1320,
+          "startMinutes": 1020
+        }
+      ],
+      "monday": [
+        {
+          "endMinutes": 900,
+          "startMinutes": 690
+        },
+        {
+          "endMinutes": 1320,
+          "startMinutes": 1020
+        }
+      ],
+      "sunday": [
+        {
+          "endMinutes": 1320,
+          "startMinutes": 780
+        }
+      ],
+      "tuesday": [
+        {
+          "endMinutes": 900,
+          "startMinutes": 660
+        },
+        {
+          "endMinutes": 1320,
+          "startMinutes": 1020
+        }
+      ],
+      "saturday": [
+        {
+          "endMinutes": 1320,
+          "startMinutes": 780
+        }
+      ],
+      "thursday": [
+        {
+          "endMinutes": 900,
+          "startMinutes": 660
+        },
+        {
+          "endMinutes": 1320,
+          "startMinutes": 1020
+        }
+      ],
+      "wednesday": [
+        {
+          "endMinutes": 900,
+          "startMinutes": 660
+        },
+        {
+          "endMinutes": 1320,
+          "startMinutes": 1020
+        }
+      ]
+    },
+    "closedWeekdays": {
+      "friday": false,
+      "monday": true,
+      "sunday": false,
+      "tuesday": false,
+      "saturday": false,
+      "thursday": false,
+      "wednesday": false
+    }
+  }
+}

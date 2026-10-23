@@ -1,3 +1,4 @@
+import { hourOverview, OVERVIEW_NOTE } from "./hourOverview";
 // ============================================================================
 // PDF-Export – ECHTES Vektor-PDF (Text + Linien), nicht mehr als Screenshot.
 //
@@ -702,6 +703,22 @@ export function buildDienstplanPdf(
     orientation: landscape ? "landscape" : "portrait",
     compress: true,
   });
+  const overviewY = drawHeader(doc, "Stundenübersicht", schedule, opts.title);
+  const overview = hourOverview(schedule, opts.dates, opts.employeeIds);
+  const hours = (n: number | null) => n === null ? "- *" : minutesToDecimalHours(n);
+  const total = overview.reduce((n, r) => n + r.total, 0);
+  const sunday = overview.reduce((n, r) => n + r.sunday, 0);
+  const night = overview.some(r => r.night === null) ? null : overview.reduce((n, r) => n + r.night!, 0);
+  const overviewW = doc.internal.pageSize.getWidth() - 2 * MARGIN;
+  const overviewEnd = drawGrid(doc, MARGIN, overviewY,
+    [0.37, 0.19, 0.25, 0.19].map((ratio, i) => ({ w: overviewW * ratio, align: i === 0 ? "left" as const : "right" as const })),
+    ["Mitarbeiter", "Gesamtstunden", "Nachtstunden\n(ab 20 Uhr)", "Sonntagsstunden"],
+    [...overview.map((r, i) => ({ cells: [[r.employee.name], [hours(r.total)], [hours(r.night)], [hours(r.sunday)]], shaded: i % 2 === 1 })),
+      { cells: [["Summe"], [hours(total)], [hours(night)], [hours(sunday)]], shaded: true, strong: true }], 9, 11);
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  doc.text(doc.splitTextToSize(T(OVERVIEW_NOTE), overviewW), MARGIN, overviewEnd + 7);
+  doc.addPage();
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const startY = drawHeader(doc, "Dienstplan", schedule, opts.title);

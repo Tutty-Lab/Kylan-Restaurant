@@ -234,7 +234,7 @@ export type PeakWindow = {
 
 const MITTAG: PeakWindow = {
   label: "Trưa",
-  startMinutes: 11 * 60 + 30,
+  startMinutes: 11 * 60,
   endMinutes: 15 * 60,
   minStaff: 1,
   maxStaff: 5,

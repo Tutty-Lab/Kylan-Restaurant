@@ -22,6 +22,7 @@ import { ShiftCellEditor } from "./ShiftCellEditor";
 import { ScheduleDayView } from "./ScheduleDayView";
 import { weeksOfMonth } from "../lib/weeks";
 import { employmentShortVi } from "../lib/employment";
+import { KylanCoverageRows } from "./KylanCoverageRows";
 
 function isWeekendKey(iso: string): boolean {
   const k = weekdayKeyOf(parseIsoDate(iso));
@@ -426,6 +427,7 @@ export function ScheduleTab({
               />
               <SummaryRow label="Ca sáng" dates={gridDates} value={(d) => String(dayStats.get(d)!.early)} />
               <SummaryRow label="Ca tối" dates={gridDates} value={(d) => String(dayStats.get(d)!.late)} />
+              <KylanCoverageRows schedule={schedule} dates={gridDates} />
             </tfoot>
           </table>
         </div>

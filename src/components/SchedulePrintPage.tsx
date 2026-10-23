@@ -1,3 +1,4 @@
+import { StundenOverviewPage } from "./StundenOverviewPage";
 import type { Schedule, Shift } from "../types";
 import {
   parseIsoDate,
@@ -85,6 +86,8 @@ export function SchedulePrintPage({
   const td = "border border-slate-300 px-2 py-[3px]";
 
   return (
+    <>
+    <StundenOverviewPage schedule={schedule} dates={dates} title={title} employeeIds={employeeIds} />
     <div className="stundenzettel-page bg-white text-slate-900 mx-auto max-w-[210mm] p-6 text-[12px]">
       <div className="flex items-start justify-between border-b-2 border-slate-800 pb-2 mb-3">
         <div>
@@ -188,5 +191,6 @@ export function SchedulePrintPage({
         <div className="border-t border-slate-500 pt-1 mt-8 text-slate-600">Datum</div>
       </div>
     </div>
+    </>
   );
 }

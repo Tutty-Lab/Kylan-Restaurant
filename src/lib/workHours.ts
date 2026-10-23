@@ -12,7 +12,7 @@ export type DayWindow = { startMinutes: number; endMinutes: number };
 /**
  * Ein Arbeitstag kann aus MEHREREN Blöcken bestehen.
  *
- * Kylan öffnet Di–Fr zweimal am Tag (11:30–15:00 und 17:00–22:00). Früher gab
+ * Kylan öffnet Di–Fr zweimal am Tag (11:00–15:00 und 17:00–22:00). Früher gab
  * es je Wochentag nur ein Fenster; damit liess sich die Mittagsschliessung
  * nicht abbilden und der Scheduler plante mitten hinein. Ein Dienst muss immer
  * KOMPLETT in einen Block passen – über die Schliessung hinweg gibt es keine
@@ -73,10 +73,10 @@ const w = (start: number, end: number): DayWindow => ({ startMinutes: start, end
 
 // Vorgaben der Chefin (Kylan Restaurant), Arbeitszeit:
 //   Montag            geschlossen
-//   Dienstag–Freitag  11:30–15:00 UND 17:00–22:00  (zwei Blöcke)
+//   Dienstag–Freitag  11:00–15:00 UND 17:00–22:00  (zwei Blöcke)
 //   Samstag, Sonntag  13:00–22:00
 //   Feiertag          15:00–22:00
-const MITTAGS_SPLIT: DayBlocks = [w(11 * 60 + 30, 15 * 60), w(17 * 60, 22 * 60)];
+const MITTAGS_SPLIT: DayBlocks = [w(11 * 60, 15 * 60), w(17 * 60, 22 * 60)];
 const WEEKEND: DayBlocks = [w(13 * 60, 22 * 60)];
 const HOLIDAY: DayBlocks = [w(15 * 60, 22 * 60)];
 
@@ -195,6 +195,13 @@ export function normalizeWorkHours(partial: Partial<WorkHoursConfig> | undefined
   const perWeekday = {} as Record<WeekdayKey, DayBlocks>;
   for (const key of Object.keys(base.perWeekday) as WeekdayKey[]) {
     perWeekday[key] = blocksFrom(partial?.perWeekday?.[key], base.perWeekday[key]);
+    // Migrate only Kylan's former exact weekday preset; preserve custom windows.
+    const blocks = perWeekday[key];
+    if (["tuesday", "wednesday", "thursday", "friday"].includes(key)
+      && blocks.length === 2 && blocks[0].startMinutes === 690 && blocks[0].endMinutes === 900
+      && blocks[1].startMinutes === 1020 && blocks[1].endMinutes === 1320) {
+      blocks[0].startMinutes = 660;
+    }
   }
   const holiday = blocksFrom(partial?.holiday, base.holiday);
 

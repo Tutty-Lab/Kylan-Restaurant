@@ -9,6 +9,7 @@ import { Dashboard } from "./components/Dashboard";
 import { LockScreen } from "./components/LockScreen";
 import { isAuthenticated, logout } from "./lib/auth";
 import { MONTH_NAMES_VI } from "./lib/dateFormat";
+import { isKylanDebug } from "./lib/reviewMode";
 
 type TabId = "einstellungen" | "mitarbeiter" | "dienstplan" | "stundenzettel";
 
@@ -34,7 +35,7 @@ export default function App() {
 function MainApp({ onLogout }: { onLogout: () => void }) {
   const store = useSchedule();
   const { schedule } = store;
-  const [tab, setTab] = useState<TabId>("stundenzettel");
+  const [tab, setTab] = useState<TabId>(isKylanDebug ? "dienstplan" : "stundenzettel");
   const [menuOpen, setMenuOpen] = useState(false);
   const [docsOpen, setDocsOpen] = useState(false);
   /** Steigt bei jedem Klick auf „Tạo lịch"; ScheduleTab startet dann seinen Ablauf. */

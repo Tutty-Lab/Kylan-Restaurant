@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { createClient } from "@supabase/supabase-js";
+import { isKylanDebug } from "./reviewMode";
 
 /**
  * Kennung dieser Filiale = Schlüssel der Zeile in store_data.
@@ -26,7 +27,7 @@ const anonKey: string | undefined =
   env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-export const supabase = url && anonKey ? createClient(url, anonKey) : null;
+export const supabase = !isKylanDebug && url && anonKey ? createClient(url, anonKey) : null;
 
 /** true = Zugangsdaten vorhanden. Fehlen sie, läuft die App nur lokal weiter. */
 export const isRemoteConfigured = supabase !== null;

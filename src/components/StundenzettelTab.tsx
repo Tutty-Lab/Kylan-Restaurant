@@ -220,97 +220,52 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
   }
 
   const hasSchedule = schedule.shifts.length > 0;
+  const isTimesheet = what === "stundenzettel" || what.startsWith("sz-");
+  const previewRange = isTimesheet ? null : scheduleRangeFor(what);
+  const previewWeek = what.startsWith("sz-") ? szWeekFor(what.slice(3)) : null;
+  const previewDates = previewWeek?.dates;
+  const previewTitle = previewWeek?.label ?? previewRange?.title ?? monthLabel(schedule.year, schedule.month);
+
 
   return (
     <>
       {/* Điều khiển (không in) */}
       <div className="no-print">
-        {/* ---- In & Xuất ---- */}
-        <div className="rounded-lg border border-slate-200 bg-white p-3 mb-4">
-          <div className="text-sm font-medium text-slate-700 mb-2">In &amp; Xuất file</div>
-
-          <div className="flex flex-wrap items-end gap-3">
-            {/* WER */}
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Cho ai</span>
-              <select
-                className="rounded border border-slate-300 px-2 py-2 text-sm min-w-[10rem]"
-                value={who}
-                onChange={(e) => setWho(e.target.value)}
-              >
-                <option value="all">Tất cả (cả quán)</option>
-                {schedule.employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
+        <div className="mb-4">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1" role="group" aria-label="Loại tài liệu">
+              {([{id:"stundenzettel",label:"Bảng chấm công"},{id:"month",label:"Lịch làm việc"}] as const).map(item => {
+                const active = item.id === "stundenzettel" ? isTimesheet : !isTimesheet;
+                return <button key={item.id} type="button" aria-pressed={active}
+                  onClick={() => setWhat(item.id)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+                  {item.label}
+                </button>;
+              })}
+            </div>
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+              <select aria-label="Nhân viên" value={who} onChange={e => setWho(e.target.value)}
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm sm:flex-none">
+                <option value="all">Cả quán ({schedule.employees.length} người)</option>
+                {schedule.employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
-            </label>
-
-            {/* WAS */}
-            <label className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500">Nội dung</span>
-              <select
-                className="rounded border border-slate-300 px-2 py-2 text-sm min-w-[14rem]"
-                value={what}
-                onChange={(e) => setWhat(e.target.value)}
-              >
-                <option value="stundenzettel">Bảng chấm công (Stundenzettel) — cả tháng</option>
-                {weeks.map((w) => (
-                  <option key={`sz-${w.weekStart}`} value={`sz-${w.weekStart}`}>
-                    Bảng chấm công (Stundenzettel) — tuần {w.label}
-                  </option>
-                ))}
-                <option value="month">Lịch làm việc — cả tháng</option>
-                {weeks.map((w) => {
-                  const printed = (schedule.printedWeeks ?? []).includes(w.weekStart);
-                  return (
-                    <option key={w.weekStart} value={w.weekStart}>
-                      Lịch làm việc — tuần {w.label}
-                      {printed ? " ✓ (đã in)" : ""}
-                    </option>
-                  );
-                })}
+              <select aria-label="Khoảng thời gian" value={what} onChange={e => setWhat(e.target.value)}
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm sm:flex-none">
+                <option value={isTimesheet ? "stundenzettel" : "month"}>Cả tháng</option>
+                {weeks.map(w => <option key={w.weekStart} value={isTimesheet ? `sz-${w.weekStart}` : w.weekStart}>
+                  Tuần {w.label}{!isTimesheet && (schedule.printedWeeks ?? []).includes(w.weekStart) ? " ✓" : ""}
+                </option>)}
               </select>
-            </label>
-
-            {/* Hành động */}
-            <div className="flex items-center gap-2">
-              <button
-                disabled={pdfBusy || !hasSchedule}
-                onClick={onPrint}
-                className="rounded border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-40"
-              >
-                🖨 In
+              <button type="button" disabled={pdfBusy || !hasSchedule} onClick={onPrint}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40">In</button>
+              <button type="button" disabled={pdfBusy || !hasSchedule} onClick={onPdf}
+                className="ml-auto shrink-0 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40">
+                {pdfBusy ? `Đang tạo PDF${pdfProgress ? ` (${pdfProgress})` : "…"}` : "Xuất PDF"}
               </button>
-              <button
-                disabled={pdfBusy || !hasSchedule}
-                onClick={onPdf}
-                className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 active:bg-slate-800 disabled:opacity-40"
-              >
-                ⬇ Xuất PDF
-              </button>
-              {pdfBusy && (
-                <span className="text-sm text-slate-500">
-                  {pdfProgress ? `Đang tạo PDF (${pdfProgress})…` : "Đang tạo PDF…"}
-                </span>
-              )}
             </div>
           </div>
-
-          {!hasSchedule && (
-            <p className="mt-2 text-sm text-slate-400">
-              Chưa có lịch. Sang tab „Lịch làm việc" để tạo.
-            </p>
-          )}
-
-          <p className="mt-2 text-xs text-slate-500">
-            <b>Bảng chấm công (Stundenzettel)</b> theo mẫu tiếng Đức để nộp — một tờ mỗi người, chọn
-            cả tháng hoặc từng tuần. <b>Lịch làm việc</b> là lịch treo ở quán (cả tháng hoặc từng
-            tuần, cho cả quán hoặc một người). <b>In lịch một tuần sẽ khóa lịch tháng</b> để bản
-            treo luôn khớp với hệ thống. Xuất PDF tải thẳng file về máy; trên điện thoại mở bảng
-            Chia sẻ.
-          </p>
+          {!hasSchedule && <p className="text-xs text-slate-500">Chưa có lịch. Sang tab Lịch để tạo.</p>}
+          {!isTimesheet && what !== "month" && <p className="text-xs text-slate-500">In hoặc xuất lịch tuần sẽ khóa lịch tháng.</p>}
 
           {isLocked && (
             <div className="mt-3 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2">
@@ -367,18 +322,16 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
           )}
         </div>
 
-        {/* Xem trước trên màn hình cho nhân viên đã chọn */}
-        {previewEmployee && (
-          <>
-            <div className="mb-1 text-xs text-slate-500">
-              Xem trước bảng chấm công: <b>{previewEmployee.name}</b>
-              {who === "all" && " (chọn một người ở ô „Cho ai“ để xem người khác)"}
-            </div>
-            <div className="rounded-lg border border-slate-300 shadow-sm bg-white overflow-x-auto">
-              <StundenzettelPage schedule={schedule} employee={previewEmployee} />
-            </div>
-          </>
-        )}
+        <div className="mb-2 text-xs text-slate-500">
+          Xem trước {isTimesheet ? "bảng chấm công" : "lịch làm việc"} · {previewTitle}
+          {isTimesheet && previewEmployee && <> · {previewEmployee.name}{who === "all" && " (PDF gồm cả quán)"}</>}
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-x-auto">
+          {isTimesheet ? previewEmployee && <StundenzettelPage schedule={schedule} employee={previewEmployee}
+            dates={previewDates} periodLabel={previewTitle} /> : previewRange &&
+            <SchedulePrintPage schedule={schedule} dates={previewRange.dates} title={previewRange.title}
+              layout={previewRange.layout} employeeIds={previewRange.employeeIds} />}
+        </div>
       </div>
 
       {/* Vùng in ẩn: hoặc các tờ chấm công, hoặc lịch làm việc */}

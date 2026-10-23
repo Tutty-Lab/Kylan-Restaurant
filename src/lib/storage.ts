@@ -4,8 +4,9 @@
 // ============================================================================
 
 import type { Schedule, Shift } from "../types";
+import { isKylanDebug } from "./reviewMode";
 
-const STORAGE_KEY = "stundenzettel-app:v1";
+const STORAGE_KEY = isKylanDebug ? "kylan-debug:v1" : "stundenzettel-app:v1";
 
 export type PersistedState = {
   schedule: Schedule;

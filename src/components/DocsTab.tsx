@@ -112,7 +112,7 @@ export function DocsTab() {
           </li>
           <li>
             Mỗi ca phải nằm <b>gọn trong một khung mở cửa</b>. T3–T6 quán mở hai khung
-            (11:30–15:00 và 17:00–22:00) nên ca <b>không được vắt qua</b> lúc nghỉ trưa —
+            (11:00–15:00 và 17:00–22:00) nên ca <b>không được vắt qua</b> lúc nghỉ trưa —
             khung dài nhất trong ngày chỉ 5 giờ.
           </li>
           <li>
@@ -123,7 +123,7 @@ export function DocsTab() {
             <br />
             <span className="text-slate-500">
               Chủ cũng là người duy nhất làm <b>xuyên qua giờ nghỉ trưa</b> (T3–T6 quán
-              đóng 15:00–17:00): với chủ thì cả khung 11:30–22:00 tính là một mạch. Đây
+              đóng 15:00–17:00): với chủ thì cả khung 11:00–22:00 tính là một mạch. Đây
               không phải ưu ái mà là cách duy nhất để 200h/tháng xếp được — nếu chỉ làm
               trong một khối thì mỗi tuần tối đa 4×5h + 9h = 29h, cả tháng chỉ ~126h.
             </span>
@@ -139,7 +139,7 @@ export function DocsTab() {
             chỉ hiện <b>cảnh báo</b> chứ không chặn.
             <br />
             <span className="text-slate-500">
-              Ngày trong tuần quán mở 11:30–15:00 và 17:00–22:00, nhưng khung của học nghề
+              Ngày trong tuần quán mở 11:00–15:00 và 17:00–22:00, nhưng khung của học nghề
               cắt vào 18:00–22:00, nên ca dài nhất trong tuần là 4h. Muốn nhiều giờ hơn thì
               phải rơi vào T7/CN.
             </span>
@@ -186,7 +186,7 @@ export function DocsTab() {
       <Section title="2) Tỉ lệ ca tối vs ca sáng">
         <p>
           Với số giờ đã chia cho mỗi ngày, phần trăm dưới đây là <b>tỉ lệ giờ dành cho ca tối</b> (phần
-          còn lại là ca sáng). Kylan <b>thứ 3–thứ 6</b> mở hai khung <b>11:30–15:00</b> và{" "}
+          còn lại là ca sáng). Kylan <b>thứ 3–thứ 6</b> mở hai khung <b>11:00–15:00</b> và{" "}
           <b>17:00–22:00</b>; <b>thứ 7 &amp; chủ nhật</b> mở liền <b>13:00–22:00</b>. Sáng thứ 3–thứ 6
           đông khách, tối chủ nhật cũng đông.
         </p>
@@ -243,7 +243,7 @@ export function DocsTab() {
       <Section title="3) Độ dài ca và giờ nghỉ">
         <p>
           Ca sáng bám đầu khung, ca tối bám cuối khung — <b>khung ở đây là từng khối mở cửa</b>,
-          không phải cả ngày. T3–T6 nghĩa là ca sáng nằm trong 11:30–15:00, ca tối trong
+          không phải cả ngày. T3–T6 nghĩa là ca sáng nằm trong 11:00–15:00, ca tối trong
           17:00–22:00. Ca <b>không bắt buộc</b> neo vào hai đầu: nếu cần phủ cao điểm, app sẽ
           đẩy ca vào giữa khối. Người mở cửa và người đóng cửa thì luôn có.
         </p>
@@ -257,9 +257,8 @@ export function DocsTab() {
           9 tiếng rưỡi. Bảng dưới đọc thẳng từ mã nguồn.
           <br />
           <span className="text-slate-500">
-            Vì thế <b>ca 10 tiếng của chủ quán không còn xếp được</b>: 10 tiếng cộng 45 phút
-            nghỉ là 10 tiếng 45, mà khung T3–T6 chỉ có 10 tiếng rưỡi (11:30–22:00). Ca dài
-            nhất giờ là <b>9 tiếng</b>.
+            T3–T6 có khung 11:00–22:00, tổng cộng 11 tiếng. Ca chỉ được xếp khi cả
+            giờ công và giờ nghỉ nằm trong khung cho phép; giới hạn giờ công riêng vẫn áp dụng.
           </span>
         </p>
         <div className="overflow-x-auto">

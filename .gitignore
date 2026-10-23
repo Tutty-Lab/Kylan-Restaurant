@@ -18,3 +18,4 @@ dist-ssr
 # Lokale Review-Fixture: wird von der App NICHT geladen, nur von Hand ueber
 # die Konsole in den LocalStorage geschoben.
 public/demo-state.json
+output/
