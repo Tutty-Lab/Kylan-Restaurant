@@ -5,7 +5,7 @@ import type { UseScheduleReturn } from "../hooks/useSchedule";
 import type { Employee } from "../types";
 import { StundenzettelPage } from "./StundenzettelPage";
 import { SchedulePrintPage, type SchedulePrintLayout } from "./SchedulePrintPage";
-import { buildDienstplanPdf, buildStundenzettelPdf, savePdf, safeFileName } from "../lib/pdf";
+import { buildDienstplanPdf, buildStundenzettelPdf, savePdf, safeFileName, openPrintPdf } from "../lib/pdf";
 import { weeksOfMonth } from "../lib/weeks";
 import { datesOfMonth } from "../lib/demand";
 import { monthLabel } from "../lib/shiftOps";
@@ -62,17 +62,32 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
   const employeeIds = who === "all" ? undefined : [who];
   const whoTag = who === "all" ? "tat_ca" : safeFileName(previewEmployee?.name ?? who);
 
-  // Vùng in phải được render TRƯỚC khi gọi print, và print phải nằm trong cùng
-  // thao tác chạm (mobile chặn print ngoài gesture). flushSync render đồng bộ.
-  function doPrint(list: Employee[], sz?: { dates?: string[]; label?: string }) {
-    if (list.length === 0) return;
-    flushSync(() => {
-      setScheduleRange(null);
-      setSzDates(sz?.dates);
-      setSzLabel(sz?.label);
-      setPrintList(list);
-    });
-    window.print();
+  // Open the print tab during the click, before async PDF generation.
+  async function doPrint(list: Employee[], sz?: { dates?: string[]; label?: string }) {
+    if (!list.length || pdfBusy) return;
+    const target = window.open("about:blank", "_blank");
+    if (!target) {
+      alert("Cho phép mở tab mới để in PDF, hoặc dùng Xuất PDF rồi in file đã tải.");
+      return;
+    }
+    target.document.title = "Đang chuẩn bị bản in";
+    target.document.body.textContent = "Đang chuẩn bị bản in…";
+    setPdfBusy(true);
+    try {
+      flushSync(() => {
+        setScheduleRange(null);
+        setSzDates(sz?.dates);
+        setSzLabel(sz?.label);
+        setPrintList(list);
+      });
+      const doc = await buildStundenzettelPdf(schedule, list, { dates: sz?.dates, periodLabel: sz?.label });
+      openPrintPdf(doc, target);
+    } catch (err) {
+      target.close();
+      alert(`Không tạo được bản in: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setPdfBusy(false);
+    }
   }
 
   /**
@@ -81,13 +96,20 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
    * Monatsausdruck ist nur eine Übersicht und sperrt nichts.
    */
   function printSchedule(range: ScheduleRange) {
-    if (range.dates.length === 0) return;
-    flushSync(() => {
-      setPrintList(null);
-      setScheduleRange(range);
-    });
-    window.print();
-    if (range.weekStart) markWeekPrinted(range.weekStart);
+    if (!range.dates.length || pdfBusy) return;
+    const target = window.open("about:blank", "_blank");
+    if (!target) {
+      alert("Cho phép mở tab mới để in PDF, hoặc dùng Xuất PDF rồi in file đã tải.");
+      return;
+    }
+    try {
+      const doc = buildDienstplanPdf(schedule, range);
+      openPrintPdf(doc, target);
+      if (range.weekStart) markWeekPrinted(range.weekStart);
+    } catch (err) {
+      target.close();
+      alert(`Không tạo được bản in: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**

@@ -577,6 +577,14 @@ export function savePdf(doc: jsPDF, filename: string): void {
   deliver(doc.output("blob"), filename);
 }
 
+/** Print the PDF itself so browser webpage headers never reach the paper. */
+export function openPrintPdf(doc: jsPDF, target: Window): void {
+  doc.autoPrint();
+  const url = URL.createObjectURL(doc.output("blob"));
+  target.location.replace(url);
+  setTimeout(() => URL.revokeObjectURL(url), 300_000);
+}
+
 // ── Dienstplan (Lịch làm việc, zum Aushang im Laden) ────────────────────────
 //
 // Auch hier echtes Vektor-PDF statt Screenshot. Zwei Ausrichtungen, genau wie
