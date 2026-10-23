@@ -79,27 +79,29 @@ body {
 }
 
 @media print {
-  body {
-    background: #fff;
-  }
-  .no-print {
-    display: none !important;
-  }
-  .print-area {
-    display: block !important;
-  }
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff; }
+  body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  main { max-width: none !important; margin: 0 !important; padding: 0 !important; }
+  .no-print { display: none !important; }
+  .print-area { display: block !important; }
   .stundenzettel-page {
+    width: 210mm;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 12mm 14mm !important;
+    font-size: 10px !important;
+    line-height: 1.2;
+    break-after: page;
     page-break-after: always;
-    padding: 0;
   }
-  .stundenzettel-page:last-child {
-    page-break-after: auto;
-  }
-}
-
-@media print {
-  /* Kein Seitenrand auf @page => der Browser druckt KEINE Kopf-/Fusszeile mehr
-     (kein Dokumenttitel, kein Datum, keine .vercel.app-URL). Der Rand liegt
-     stattdessen als Innenabstand auf der gedruckten Seite. */
-  .stundenzettel-page { padding: 14mm !important; }
+  .stundenzettel-page:last-child { break-after: auto; page-break-after: auto; }
+  .stundenzettel-page h2 { font-size: 18px; line-height: 1.2; }
+  .stundenzettel-page table { font-size: 9px !important; line-height: 1.15; }
+  .stundenzettel-page th, .stundenzettel-page td { padding: 1px 4px !important; }
+  .stundenzettel-page td > div { padding-top: 0 !important; padding-bottom: 0 !important; }
+  .stundenzettel-page tr { break-inside: avoid; page-break-inside: avoid; }
+  .stundenzettel-page thead { display: table-header-group; }
+  .stundenzettel-page tfoot { display: table-row-group; }
+  .stundenzettel-page .mt-10 { margin-top: 16px; break-inside: avoid; }
+  .stundenzettel-page .mt-8 { margin-top: 10px; }
 }

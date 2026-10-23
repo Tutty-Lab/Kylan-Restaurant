@@ -25,7 +25,7 @@ export type SchedulePrintLayout = "byEmployee" | "byDate";
  * Eine Zelle kann MEHRERE Dienste enthalten – mittags und abends. Steht dort
  * nur einer, fehlt auf dem ausgehängten Plan die halbe Wahrheit.
  */
-function ShiftCell({ shifts, closed }: { shifts: Shift[]; closed: boolean }) {
+function ShiftCell({ shifts, closed, showHours = true }: { shifts: Shift[]; closed: boolean; showHours?: boolean }) {
   if (shifts.length === 0) {
     return <span className="text-slate-400">{closed ? "—" : "frei"}</span>;
   }
@@ -36,10 +36,10 @@ function ShiftCell({ shifts, closed }: { shifts: Shift[]; closed: boolean }) {
           <div className="whitespace-nowrap">
             {minutesToTime(shift.startMinutes)}–{minutesToTime(shift.endMinutes)}
           </div>
-          <div className="text-[10px] text-slate-500">
+          {showHours && <div className="text-[10px] text-slate-500">
             {minutesToShortHours(shift.paidMinutes)}
             {shift.pauseMinutes > 0 && ` · P ${shift.pauseMinutes}`}
-          </div>
+          </div>}
         </div>
       ))}
     </>
@@ -174,7 +174,7 @@ export function SchedulePrintPage({
                   </td>
                   {emps.map((e) => (
                     <td key={e.id} className={`${td} text-center`}>
-                      <ShiftCell shifts={byKey.get(`${e.id}#${d}`) ?? []} closed={closed} />
+                      <ShiftCell shifts={byKey.get(`${e.id}#${d}`) ?? []} closed={closed} showHours={false} />
                     </td>
                   ))}
                 </tr>

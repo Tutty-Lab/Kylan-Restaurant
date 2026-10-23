@@ -3,7 +3,7 @@ import type { Employee, Schedule, Shift } from "../../types";
 import fixture from "../kylanReviewData.json";
 import { DEFAULT_WORK_HOURS } from "../workHours";
 import { hourOverview } from "../hourOverview";
-import { buildDienstplanPdf } from "../pdf";
+import { buildStundenzettelPdf, buildDienstplanPdf } from "../pdf";
 
 const employee = fixture.employees[0] as Employee;
 const shift = (date: string, pauseMinutes = 0): Shift => ({ id: date, employeeId: employee.id, date,
@@ -21,6 +21,18 @@ describe("schedule overview", () => {
   });
   it("does not invent pause placement", () => {
     expect(hourOverview(schedule,["2026-10-24"],[employee.id])[0]).toMatchObject({total:150,night:null});
+  });
+  it("puts overview first for monthly and weekly timesheets, respecting selected employees", async () => {
+    for (const dates of [undefined, ["2026-10-23"]]) {
+      const doc = await buildStundenzettelPdf(schedule, [employee], { dates });
+      expect(doc.getNumberOfPages()).toBe(2);
+      const pages = (doc.internal as unknown as { pages: string[][] }).pages;
+      expect(pages[1].join(" ")).toContain("Stundenübersicht");
+      expect(pages[1].join(" ")).toContain(employee.name);
+      expect(pages[1].join(" ")).not.toContain(schedule.employees[1].name);
+      expect(pages[2].join(" ")).toContain("Stundenaufzeichnung");
+      expect(pages[1].join(" ")).toContain(dates ? "3,00" : "8,50");
+    }
   });
   for (const layout of ["byDate","byEmployee"] as const) {
     it(`puts overview before schedule: ${layout}`, () => {

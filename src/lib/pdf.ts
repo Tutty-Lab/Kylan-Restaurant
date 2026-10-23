@@ -496,6 +496,25 @@ function drawStundenzettel(
   );
 }
 
+/** Shared first page for both schedule and timesheet exports. */
+function drawHoursOverview(doc: jsPDF, schedule: Schedule, dates: string[], periodLabel: string, employeeIds?: string[]): void {
+  const overviewY = drawHeader(doc, "Stundenübersicht", schedule, periodLabel);
+  const overview = hourOverview(schedule, dates, employeeIds);
+  const hours = (n: number | null) => n === null ? "- *" : minutesToDecimalHours(n);
+  const total = overview.reduce((n, r) => n + r.total, 0);
+  const sunday = overview.reduce((n, r) => n + r.sunday, 0);
+  const night = overview.some(r => r.night === null) ? null : overview.reduce((n, r) => n + r.night!, 0);
+  const overviewW = doc.internal.pageSize.getWidth() - 2 * MARGIN;
+  const overviewEnd = drawGrid(doc, MARGIN, overviewY,
+    [0.37, 0.19, 0.25, 0.19].map((ratio, i) => ({ w: overviewW * ratio, align: i === 0 ? "left" as const : "right" as const })),
+    ["Mitarbeiter", "Gesamtstunden", "Nachtstunden\n(ab 20 Uhr)", "Sonntagsstunden"],
+    [...overview.map((r, i) => ({ cells: [[r.employee.name], [hours(r.total)], [hours(r.night)], [hours(r.sunday)]], shaded: i % 2 === 1 })),
+      { cells: [["Summe"], [hours(total)], [hours(night)], [hours(sunday)]], shaded: true, strong: true }], 9, 11);
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  doc.text(doc.splitTextToSize(T(OVERVIEW_NOTE), overviewW), MARGIN, overviewEnd + 7);
+}
+
 /**
  * Baut die Stundenzettel-PDF: eine A4-Seite je Mitarbeiter.
  * `dates` fehlt => ganzer Monat; `periodLabel` fehlt => Monat/Jahr.
@@ -514,8 +533,9 @@ export async function buildStundenzettelPdf(
   const dates = opts.dates ?? datesOfMonth(schedule.year, schedule.month);
   const periodLabel = opts.periodLabel ?? monthLabelDe(schedule.year, schedule.month);
 
+  drawHoursOverview(doc, schedule, dates, periodLabel, employees.map(e => e.id));
   for (let i = 0; i < employees.length; i++) {
-    if (i > 0) doc.addPage();
+    doc.addPage();
     drawStundenzettel(doc, schedule, employees[i], dates, periodLabel);
     onProgress?.(i + 1, employees.length);
     if (employees.length > 1) await new Promise((r) => setTimeout(r, 0));
@@ -703,21 +723,7 @@ export function buildDienstplanPdf(
     orientation: landscape ? "landscape" : "portrait",
     compress: true,
   });
-  const overviewY = drawHeader(doc, "Stundenübersicht", schedule, opts.title);
-  const overview = hourOverview(schedule, opts.dates, opts.employeeIds);
-  const hours = (n: number | null) => n === null ? "- *" : minutesToDecimalHours(n);
-  const total = overview.reduce((n, r) => n + r.total, 0);
-  const sunday = overview.reduce((n, r) => n + r.sunday, 0);
-  const night = overview.some(r => r.night === null) ? null : overview.reduce((n, r) => n + r.night!, 0);
-  const overviewW = doc.internal.pageSize.getWidth() - 2 * MARGIN;
-  const overviewEnd = drawGrid(doc, MARGIN, overviewY,
-    [0.37, 0.19, 0.25, 0.19].map((ratio, i) => ({ w: overviewW * ratio, align: i === 0 ? "left" as const : "right" as const })),
-    ["Mitarbeiter", "Gesamtstunden", "Nachtstunden\n(ab 20 Uhr)", "Sonntagsstunden"],
-    [...overview.map((r, i) => ({ cells: [[r.employee.name], [hours(r.total)], [hours(r.night)], [hours(r.sunday)]], shaded: i % 2 === 1 })),
-      { cells: [["Summe"], [hours(total)], [hours(night)], [hours(sunday)]], shaded: true, strong: true }], 9, 11);
-  doc.setFontSize(8);
-  doc.setTextColor(...MUTED);
-  doc.text(doc.splitTextToSize(T(OVERVIEW_NOTE), overviewW), MARGIN, overviewEnd + 7);
+  drawHoursOverview(doc, schedule, opts.dates, opts.title, opts.employeeIds);
   doc.addPage();
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();

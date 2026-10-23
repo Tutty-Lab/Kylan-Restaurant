@@ -1,3 +1,4 @@
+import { StundenOverviewPage } from "./StundenOverviewPage";
 import { useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import type { UseScheduleReturn } from "../hooks/useSchedule";
@@ -327,8 +328,11 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
           {isTimesheet && previewEmployee && <> · {previewEmployee.name}{who === "all" && " (PDF gồm cả quán)"}</>}
         </div>
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-x-auto">
-          {isTimesheet ? previewEmployee && <StundenzettelPage schedule={schedule} employee={previewEmployee}
-            dates={previewDates} periodLabel={previewTitle} /> : previewRange &&
+          {isTimesheet ? <>
+            <StundenOverviewPage schedule={schedule} dates={previewDates ?? datesOfMonth(schedule.year, schedule.month)} title={previewTitle} employeeIds={employeeIds} />
+            {previewEmployee && <StundenzettelPage schedule={schedule} employee={previewEmployee}
+              dates={previewDates} periodLabel={previewTitle} />}
+          </> : previewRange &&
             <SchedulePrintPage schedule={schedule} dates={previewRange.dates} title={previewRange.title}
               layout={previewRange.layout} employeeIds={previewRange.employeeIds} />}
         </div>
@@ -345,7 +349,10 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
             employeeIds={scheduleRange.employeeIds}
           />
         ) : (
-          (printList ?? []).map((emp) => (
+          <>
+          {printList && <StundenOverviewPage schedule={schedule} dates={szDates ?? datesOfMonth(schedule.year, schedule.month)}
+            title={szLabel ?? monthLabel(schedule.year, schedule.month)} employeeIds={printList.map(e => e.id)} />}
+          {(printList ?? []).map((emp) => (
             <StundenzettelPage
               key={emp.id}
               schedule={schedule}
@@ -353,7 +360,8 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
               dates={szDates}
               periodLabel={szLabel}
             />
-          ))
+          ))}
+          </>
         )}
       </div>
 
