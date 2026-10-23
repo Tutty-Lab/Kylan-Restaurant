@@ -84,6 +84,11 @@ export type Employee = {
    * verteilen – wer wann frei nimmt, ist eine Absprache im Betrieb.
    */
   vacationDates?: string[];
+  /** Configured leave allowance for each calendar year; legacy defaults otherwise. */
+  vacationAllowanceByYear?: Record<string, number>;
+  /** Inclusive first and last working dates. Empty means unrestricted. */
+  employmentStartDate?: string;
+  employmentEndDate?: string;
   /**
    * Wochentage, an denen diese Person eingeplant werden darf. Fehlt/leer =
    * jeder Tag ist möglich (keine Einschränkung).

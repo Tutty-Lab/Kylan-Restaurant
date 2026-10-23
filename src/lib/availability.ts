@@ -40,7 +40,9 @@ export function onVacation(employee: Employee, isoDate: string): boolean {
  * diesem Datum arbeiten? (fester freier Wochentag oder Urlaub sprechen dagegen)
  */
 export function mayWorkOn(employee: Employee, isoDate: string): boolean {
-  return worksOnWeekday(employee, isoDate) && !onVacation(employee, isoDate);
+  return (!employee.employmentStartDate || isoDate >= employee.employmentStartDate)
+    && (!employee.employmentEndDate || isoDate <= employee.employmentEndDate)
+    && worksOnWeekday(employee, isoDate) && !onVacation(employee, isoDate);
 }
 
 /** Wie viele Urlaubstage hat die Person in diesem Jahr eingetragen? */
@@ -50,8 +52,8 @@ export function vacationDaysInYear(employee: Employee, year: number): number {
 }
 
 /** Jahresanspruch dieser Person in Arbeitstagen. */
-export function vacationEntitlement(employee: Employee): number {
-  return URLAUB_DAYS_PER_YEAR[employee.employmentType];
+export function vacationEntitlement(employee: Employee, year = new Date().getFullYear()): number {
+  return employee.vacationAllowanceByYear?.[String(year)] ?? URLAUB_DAYS_PER_YEAR[employee.employmentType];
 }
 
 /** Urlaubstage im geplanten Monat, aufsteigend sortiert. */

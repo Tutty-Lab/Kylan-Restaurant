@@ -8,7 +8,7 @@ import {
   type Employee,
   type Shift,
 } from "../types";
-import { vacationDaysInYear, vacationEntitlement } from "./availability";
+import { mayWorkOn, vacationDaysInYear, vacationEntitlement } from "./availability";
 import { calculatePause } from "./time";
 import { maxConsecutiveRun } from "./consecutive";
 
@@ -62,12 +62,9 @@ export function validateSchedule(
   const errors: ValidationError[] = [];
   const employeeById = new Map(employees.map((e) => [e.id, e] as const));
 
-  // Urlaub. Der Anspruch gilt fürs JAHR, geprüft wird deshalb gegen alle
-  // eingetragenen Tage dieses Jahres – nicht nur gegen den geplanten Monat.
-  // Bleibt eine WARNUNG: mehr Urlaub als der gesetzliche Mindestanspruch ist
-  // erlaubt, er kann vertraglich vereinbart oder übertragen sein.
+  // Compare selected leave days with this employee's allowance for the planned year.
   for (const emp of employees) {
-    const anspruch = vacationEntitlement(emp);
+    const anspruch = vacationEntitlement(emp, year);
     const genommen = vacationDaysInYear(emp, year);
     if (genommen > anspruch) {
       errors.push({
@@ -75,7 +72,7 @@ export function validateSchedule(
         severity: "warning",
         message:
           `${emp.name}: đã nghỉ phép ${genommen} ngày trong năm ${year}, ` +
-          `vượt ${anspruch} ngày theo quy định.`,
+          `vượt ${anspruch} ngày đã thiết lập.`,
       });
     }
   }
@@ -109,6 +106,11 @@ export function validateSchedule(
 
   // Regeln je einzelner Schicht.
   for (const shift of shifts) {
+    const employee = employeeById.get(shift.employeeId);
+    if (employee && !mayWorkOn(employee, shift.date)) {
+      errors.push({ employeeId: employee.id, date: shift.date,
+        message: `${employee.name}: ca ${shift.date} nằm ngoài ngày được phép làm việc.` });
+    }
     const presence = shift.endMinutes - shift.startMinutes;
     const expectedPaid = presence - shift.pauseMinutes;
     const expectedPause = calculatePause(shift.paidMinutes);
