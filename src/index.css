@@ -45,7 +45,7 @@ body {
 /* ===================== Kẻ bảng Stundenzettel & Lịch ===================== */
 /* Dùng border-collapse: separate và border-spacing: 0 để đảm bảo 100% không
    bị lỗi mất nét kẻ viền trong Safari iOS và khi in ấn. */
-.stundenzettel-table {
+.stundenzettel-page table {
   width: 100% !important;
   border-collapse: separate !important;
   border-spacing: 0 !important;
@@ -53,8 +53,8 @@ body {
   border-left: 1.5px solid #475569 !important;
 }
 
-.stundenzettel-table th,
-.stundenzettel-table td {
+.stundenzettel-page th,
+.stundenzettel-page td {
   border-right: 1.5px solid #475569 !important;
   border-bottom: 1.5px solid #475569 !important;
   border-top: none !important;
@@ -63,8 +63,12 @@ body {
 }
 
 /* Đường kẻ phân tách giữa ca trưa và ca tối trong cùng 1 ngày */
-.stundenzettel-table .shift-split-divider {
+.stundenzettel-page .shift-split-divider {
   border-top: 1px solid #cbd5e1 !important;
+}
+
+.document-preview .stundenzettel-page + .stundenzettel-page {
+  border-top: 8px solid #e2e8f0;
 }
 
 /* ===================== Druck: Stundenzettel ===================== */
@@ -99,6 +103,12 @@ body {
   .stundenzettel-page table { font-size: 9px !important; line-height: 1.15; }
   .stundenzettel-page th, .stundenzettel-page td { padding: 1px 4px !important; }
   .stundenzettel-page td > div { padding-top: 0 !important; padding-bottom: 0 !important; }
+  .stundenzettel-page table { border-top: 1pt solid #334155 !important; border-left: 1pt solid #334155 !important; }
+  .stundenzettel-page th, .stundenzettel-page td {
+    border-right: 1pt solid #334155 !important;
+    border-bottom: 1pt solid #334155 !important;
+  }
+  .stundenzettel-page .shift-split-divider { border-top: 0.75pt solid #64748b !important; }
   .stundenzettel-page tr { break-inside: avoid; page-break-inside: avoid; }
   .stundenzettel-page thead { display: table-header-group; }
   .stundenzettel-page tfoot { display: table-row-group; }

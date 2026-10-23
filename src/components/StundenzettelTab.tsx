@@ -325,13 +325,13 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
 
         <div className="mb-2 text-xs text-slate-500">
           Xem trước {isTimesheet ? "bảng chấm công" : "lịch làm việc"} · {previewTitle}
-          {isTimesheet && previewEmployee && <> · {previewEmployee.name}{who === "all" && " (PDF gồm cả quán)"}</>}
+          {isTimesheet && <> · {who === "all" ? `${chosenEmployees.length} nhân viên` : previewEmployee?.name}</>}
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        <div className="document-preview rounded-lg border border-slate-200 bg-white shadow-sm overflow-x-auto">
           {isTimesheet ? <>
             <StundenOverviewPage schedule={schedule} dates={previewDates ?? datesOfMonth(schedule.year, schedule.month)} title={previewTitle} employeeIds={employeeIds} />
-            {previewEmployee && <StundenzettelPage schedule={schedule} employee={previewEmployee}
-              dates={previewDates} periodLabel={previewTitle} />}
+            {chosenEmployees.map(employee => <StundenzettelPage key={employee.id} schedule={schedule} employee={employee}
+              dates={previewDates} periodLabel={previewTitle} />)}
           </> : previewRange &&
             <SchedulePrintPage schedule={schedule} dates={previewRange.dates} title={previewRange.title}
               layout={previewRange.layout} employeeIds={previewRange.employeeIds} />}
