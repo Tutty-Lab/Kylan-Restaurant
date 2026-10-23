@@ -5,7 +5,7 @@ import type { UseScheduleReturn } from "../hooks/useSchedule";
 import type { Employee } from "../types";
 import { StundenzettelPage } from "./StundenzettelPage";
 import { SchedulePrintPage, type SchedulePrintLayout } from "./SchedulePrintPage";
-import { buildDienstplanPdf, buildStundenzettelPdf, savePdf, safeFileName, openPrintPdf, sharePdf } from "../lib/pdf";
+import { buildDienstplanPdf, buildStundenzettelPdf, safeFileName, openPrintPdf } from "../lib/pdf";
 import { weeksOfMonth } from "../lib/weeks";
 import { datesOfMonth } from "../lib/demand";
 import { monthLabel } from "../lib/shiftOps";
@@ -40,24 +40,13 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
   const [scheduleRange, setScheduleRange] = useState<ScheduleRange | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<string>("");
-  const [readyPdf, setReadyPdf] = useState<{ blob: Blob; filename: string; url: string } | null>(null);
+  const [readyPdf, setReadyPdf] = useState<{ filename: string; url: string } | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
-  const [shareNote, setShareNote] = useState<string | null>(null);
   useEffect(() => () => { if (readyPdf) URL.revokeObjectURL(readyPdf.url); }, [readyPdf]);
 
-  function finishPdf(doc: Parameters<typeof savePdf>[0], filename: string) {
-    const blob = doc.output("blob");
-    setReadyPdf({ blob, filename, url: URL.createObjectURL(blob) });
-    savePdf(doc, filename);
+  function finishPdf(doc: Awaited<ReturnType<typeof buildStundenzettelPdf>>, filename: string) {
+    setReadyPdf({ filename, url: URL.createObjectURL(doc.output("blob")) });
   }
-
-  async function onSharePdf() {
-    if (!readyPdf) return;
-    const result = await sharePdf(readyPdf.blob, readyPdf.filename);
-    if (result === "shared") setShareNote("Đã chia sẻ PDF.");
-    else if (result !== "cancelled") setShareNote("Trình duyệt này chưa hỗ trợ chia sẻ file. Dùng Tải PDF hoặc Mở PDF; nếu vẫn bị chặn, mở ứng dụng bằng Chrome/Safari.");
-  }
-
 
   // Zeitraum für den Stundenzettel-Ausdruck: gesetzt => Wochen-Zettel (nur diese
   // Tage), leer => ganzer Monat.
@@ -145,7 +134,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
     setPdfBusy(true);
     setPdfError(null);
     setReadyPdf(null);
-    setShareNote(null);
     setPdfProgress(list.length > 1 ? `1/${list.length}` : "");
     // Kurzer Yield, damit „Đang tạo PDF…" zuerst sichtbar wird.
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -175,7 +163,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
     if (range.dates.length === 0 || pdfBusy) return;
     setPdfError(null);
     setReadyPdf(null);
-    setShareNote(null);
     try {
       const doc = buildDienstplanPdf(schedule, {
         dates: range.dates,
@@ -375,13 +362,9 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
             <div><p className="text-sm font-semibold">PDF đã sẵn sàng</p><p className="mt-1 break-all text-xs">{readyPdf.filename}</p></div>
             <button type="button" aria-label="Đóng PDF đã sẵn sàng" onClick={() => setReadyPdf(null)} className="text-sm underline">Đóng</button>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            <a href={readyPdf.url} download={readyPdf.filename} className="rounded-lg bg-emerald-700 px-3 py-2 font-medium text-white">Tải PDF</a>
-            <a href={readyPdf.url} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-emerald-300 bg-white px-3 py-2">Mở PDF</a>
-            <button type="button" onClick={() => void onSharePdf()} className="rounded-lg border border-emerald-300 bg-white px-3 py-2">Lưu / Chia sẻ</button>
+          <div className="mt-3 flex gap-2 text-sm">
+            <a href={readyPdf.url} download={readyPdf.filename} className="rounded-lg bg-emerald-700 px-4 py-2 font-medium text-white">Lưu</a>
           </div>
-          <p className="mt-2 text-xs">Nếu file chưa tải xuống, bấm Tải PDF hoặc Mở PDF để lưu từ trình xem.</p>
-          {shareNote && <p className="mt-2 text-xs">{shareNote}</p>}
         </div>}
 
         <div className="mb-2 text-xs text-slate-500">
