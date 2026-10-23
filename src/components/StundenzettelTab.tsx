@@ -1,44 +1,21 @@
 import { savePdfFile } from "../lib/savePdfFile";
 import { StundenOverviewPage } from "./StundenOverviewPage";
-import { useMemo, useState } from "react";
-import { flushSync } from "react-dom";
+import { useState } from "react";
 import type { UseScheduleReturn } from "../hooks/useSchedule";
-import type { Employee } from "../types";
 import { StundenzettelPage } from "./StundenzettelPage";
-import { SchedulePrintPage, type SchedulePrintLayout } from "./SchedulePrintPage";
-import { buildDienstplanPdf, buildStundenzettelPdf, safeFileName, openPrintPdf } from "../lib/pdf";
-import { weeksOfMonth } from "../lib/weeks";
+import { SchedulePrintPage } from "./SchedulePrintPage";
+import { buildDienstplanPdf, buildStundenzettelPdf, safeFileName } from "../lib/pdf";
 import { datesOfMonth } from "../lib/demand";
 import { monthLabel } from "../lib/shiftOps";
 
-/** Dienstplan-Ausdruck (Monat oder eine Woche), evtl. auf eine Person gefiltert. */
-type ScheduleRange = {
-  dates: string[];
-  title: string;
-  layout: SchedulePrintLayout;
-  employeeIds?: string[];
-  /** Gesetzt bei einer Woche: nach dem Ausgeben wird der Monat gesperrt. */
-  weekStart?: string;
-};
-
 export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
-  const { schedule, isLocked, markWeekPrinted, unlockMonth } = store;
+  const { schedule, isLocked, unlockMonth } = store;
 
   // ── Auswahl: WER (eine Person oder der ganze Laden) und WAS ─────────────
   // who: "all" = ganzer Laden, sonst eine employeeId.
   const [who, setWho] = useState<string>("all");
-  // what: "stundenzettel" (Monats-Stundenzettel) | "month" (Dienstplan Monat)
-  //       | ein weekStart (Dienstplan dieser Woche).
-  const [what, setWhat] = useState<string>("stundenzettel");
+  const [what, setWhat] = useState<"stundenzettel" | "month">("stundenzettel");
 
-  const weeks = useMemo(
-    () => weeksOfMonth(schedule.year, schedule.month),
-    [schedule.year, schedule.month],
-  );
-
-  // Druck-/PDF-Bühne.
-  const [printList, setPrintList] = useState<Employee[] | null>(null);
-  const [scheduleRange, setScheduleRange] = useState<ScheduleRange | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<string>("");
   const [readyPdf, setReadyPdf] = useState<{ filename: string; blob: Blob } | null>(null);
@@ -68,11 +45,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
     }
   }
 
-  // Zeitraum für den Stundenzettel-Ausdruck: gesetzt => Wochen-Zettel (nur diese
-  // Tage), leer => ganzer Monat.
-  const [szDates, setSzDates] = useState<string[] | undefined>(undefined);
-  const [szLabel, setSzLabel] = useState<string | undefined>(undefined);
-
   /** Zweiter Klick für das Entsperren – ohne native Dialoge, siehe unten. */
   const [confirmUnlock, setConfirmUnlock] = useState(false);
 
@@ -89,181 +61,31 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
   const employeeIds = who === "all" ? undefined : [who];
   const whoTag = who === "all" ? "tat_ca" : safeFileName(previewEmployee?.name ?? who);
 
-  // Open the print tab during the click, before async PDF generation.
-  async function doPrint(list: Employee[], sz?: { dates?: string[]; label?: string }) {
-    if (!list.length || pdfBusy) return;
-    const target = window.open("about:blank", "_blank");
-    if (!target) {
-      alert("Cho phép mở tab mới để in PDF, hoặc dùng Xuất PDF rồi in file đã tải.");
-      return;
-    }
-    target.document.title = "Đang chuẩn bị bản in";
-    target.document.body.textContent = "Đang chuẩn bị bản in…";
-    setPdfBusy(true);
-    try {
-      flushSync(() => {
-        setScheduleRange(null);
-        setSzDates(sz?.dates);
-        setSzLabel(sz?.label);
-        setPrintList(list);
-      });
-      const doc = await buildStundenzettelPdf(schedule, list, { dates: sz?.dates, periodLabel: sz?.label });
-      openPrintPdf(doc, target);
-    } catch (err) {
-      target.close();
-      alert(`Không tạo được bản in: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setPdfBusy(false);
-    }
-  }
+  const dates = datesOfMonth(schedule.year, schedule.month);
+  const previewTitle = monthLabel(schedule.year, schedule.month);
+  const isTimesheet = what === "stundenzettel";
 
-  /**
-   * Dienstplan drucken. Der Wochen-Ausdruck sperrt den Monat: das Blatt hängt
-   * danach im Laden und muss mit dem Stand im System übereinstimmen. Der
-   * Monatsausdruck ist nur eine Übersicht und sperrt nichts.
-   */
-  function printSchedule(range: ScheduleRange) {
-    if (!range.dates.length || pdfBusy) return;
-    const target = window.open("about:blank", "_blank");
-    if (!target) {
-      alert("Cho phép mở tab mới để in PDF, hoặc dùng Xuất PDF rồi in file đã tải.");
-      return;
-    }
-    try {
-      const doc = buildDienstplanPdf(schedule, range);
-      openPrintPdf(doc, target);
-      if (range.weekStart) markWeekPrinted(range.weekStart);
-    } catch (err) {
-      target.close();
-      alert(`Không tạo được bản in: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  /**
-   * Stundenzettel-PDF: echtes Vektor-PDF direkt aus den Daten (jsPDF zeichnet
-   * Text und Linien). Kein Screenshot der Seite mehr – deshalb gibt es keine
-   * Offscreen-Bühne, kein Warten auf Schriften und kein Gerät, auf dem die
-   * Tabelle plötzlich anders aussieht.
-   */
-  async function doPdf(
-    list: Employee[],
-    filename: string,
-    sz?: { dates?: string[]; label?: string },
-  ) {
-    if (list.length === 0 || pdfBusy) return;
+  async function onPdf() {
+    if (!chosenEmployees.length || pdfBusy) return;
     setPdfBusy(true);
     setPdfError(null);
     setReadyPdf(null);
-    setPdfProgress(list.length > 1 ? `1/${list.length}` : "");
-    // Kurzer Yield, damit „Đang tạo PDF…" zuerst sichtbar wird.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    setSaveNote(null);
+    setPdfProgress("");
     try {
-      const doc = await buildStundenzettelPdf(
-        schedule,
-        list,
-        { dates: sz?.dates, periodLabel: sz?.label },
-        (current, total) => {
-          if (total > 1) setPdfProgress(`${current}/${total}`);
-        },
-      );
-      finishPdf(doc, filename);
-    } catch (err) {
-      setPdfError(`Không tạo được PDF: ${err instanceof Error ? err.message : String(err)}`);
+      const doc = isTimesheet
+        ? await buildStundenzettelPdf(schedule, chosenEmployees, {}, (current, total) => {
+            if (total > 1) setPdfProgress(`${current}/${total}`);
+          })
+        : buildDienstplanPdf(schedule, { dates, title: previewTitle, layout: "byDate", employeeIds });
+      finishPdf(doc, `${isTimesheet ? "Stundenzettel" : "Dienstplan"}_${whoTag}_${monthTag}.pdf`);
+    } catch (error) {
+      setPdfError(`Không tạo được PDF: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setPdfBusy(false);
       setPdfProgress("");
     }
   }
-
-  /**
-   * PDF des Dienstplans (Monat oder Woche) – ebenfalls gezeichnet, nicht
-   * fotografiert. Eine Woche sperrt danach den Monat.
-   */
-  function doPdfSchedule(range: ScheduleRange, filename: string) {
-    if (range.dates.length === 0 || pdfBusy) return;
-    setPdfError(null);
-    setReadyPdf(null);
-    try {
-      const doc = buildDienstplanPdf(schedule, {
-        dates: range.dates,
-        title: range.title,
-        layout: range.layout,
-        employeeIds: range.employeeIds,
-      });
-      finishPdf(doc, filename);
-      if (range.weekStart) markWeekPrinted(range.weekStart);
-    } catch (err) {
-      setPdfError(`Không tạo được PDF: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  // Was genau ist gewählt? Baut den passenden Ausdruck-Auftrag.
-  function scheduleRangeFor(target: string): ScheduleRange | null {
-    if (target === "month") {
-      return {
-        dates: datesOfMonth(schedule.year, schedule.month),
-        title: monthLabel(schedule.year, schedule.month),
-        // 31 Tagesspalten passen nicht hochkant auf A4.
-        layout: "byDate",
-        employeeIds,
-      };
-    }
-    const w = weeks.find((x) => x.weekStart === target);
-    if (!w) return null;
-    return {
-      dates: w.dates,
-      title: `Woche ${w.label} · ${monthLabel(schedule.year, schedule.month)}`,
-      // Leute untereinander, Tage nebeneinander – bei 7 Spalten gut auf Papier.
-      layout: "byEmployee",
-      employeeIds,
-      weekStart: w.weekStart,
-    };
-  }
-
-  // Wochen-Stundenzettel: nur die Tage dieser Woche, mit Wochentitel oben rechts.
-  function szWeekFor(weekStart: string): { dates: string[]; label: string } | null {
-    const w = weeks.find((x) => x.weekStart === weekStart);
-    if (!w) return null;
-    return { dates: w.dates, label: `Woche ${w.label}${schedule.year}` };
-  }
-
-  function onPrint() {
-    if (what === "stundenzettel") {
-      doPrint(chosenEmployees);
-      return;
-    }
-    if (what.startsWith("sz-")) {
-      const sz = szWeekFor(what.slice(3));
-      if (sz) doPrint(chosenEmployees, sz);
-      return;
-    }
-    const range = scheduleRangeFor(what);
-    if (range) printSchedule(range);
-  }
-
-  function onPdf() {
-    if (what === "stundenzettel") {
-      void doPdf(chosenEmployees, `Stundenzettel_${whoTag}_${monthTag}.pdf`);
-      return;
-    }
-    if (what.startsWith("sz-")) {
-      const weekStart = what.slice(3);
-      const sz = szWeekFor(weekStart);
-      if (sz) {
-        void doPdf(chosenEmployees, `Stundenzettel_${whoTag}_${monthTag}_tuan_${weekStart}.pdf`, sz);
-      }
-      return;
-    }
-    const range = scheduleRangeFor(what);
-    if (!range) return;
-    const suffix = what === "month" ? "thang" : `tuan_${what}`;
-    void doPdfSchedule(range, `Dienstplan_${whoTag}_${suffix}_${monthTag}.pdf`);
-  }
-
-  // Vùng in KHÔNG được dọn theo sự kiện "afterprint": trên Android sự kiện đó
-  // bắn ra ngay khi gọi window.print(), trước lúc trình duyệt dựng xong trang
-  // — nội dung bị xoá mất và tờ in ra trắng. Vùng này vốn đã ẩn trên màn hình
-  // nên cứ để nguyên; lần in sau sẽ ghi đè bằng danh sách mới.
 
   if (schedule.employees.length === 0) {
     return (
@@ -274,13 +96,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
   }
 
   const hasSchedule = schedule.shifts.length > 0;
-  const isTimesheet = what === "stundenzettel" || what.startsWith("sz-");
-  const previewRange = isTimesheet ? null : scheduleRangeFor(what);
-  const previewWeek = what.startsWith("sz-") ? szWeekFor(what.slice(3)) : null;
-  const previewDates = previewWeek?.dates;
-  const previewTitle = previewWeek?.label ?? previewRange?.title ?? monthLabel(schedule.year, schedule.month);
-
-
   return (
     <>
       {/* Điều khiển (không in) */}
@@ -303,15 +118,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
                 <option value="all">Cả quán ({schedule.employees.length} người)</option>
                 {schedule.employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
-              <select aria-label="Khoảng thời gian" value={what} onChange={e => setWhat(e.target.value)}
-                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm sm:flex-none">
-                <option value={isTimesheet ? "stundenzettel" : "month"}>Cả tháng</option>
-                {weeks.map(w => <option key={w.weekStart} value={isTimesheet ? `sz-${w.weekStart}` : w.weekStart}>
-                  Tuần {w.label}{!isTimesheet && (schedule.printedWeeks ?? []).includes(w.weekStart) ? " ✓" : ""}
-                </option>)}
-              </select>
-              <button type="button" disabled={pdfBusy || !hasSchedule} onClick={onPrint}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40">In</button>
               <button type="button" disabled={pdfBusy || !hasSchedule} onClick={onPdf}
                 className="ml-auto shrink-0 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40">
                 {pdfBusy ? `Đang tạo PDF${pdfProgress ? ` (${pdfProgress})` : "…"}` : "Xuất PDF"}
@@ -319,7 +125,6 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
             </div>
           </div>
           {!hasSchedule && <p className="text-xs text-slate-500">Chưa có lịch. Sang tab Lịch để tạo.</p>}
-          {!isTimesheet && what !== "month" && <p className="text-xs text-slate-500">In hoặc xuất lịch tuần sẽ khóa lịch tháng.</p>}
 
           {isLocked && (
             <div className="mt-3 rounded bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2">
@@ -394,41 +199,14 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
         </div>
         <div className="document-preview rounded-lg border border-slate-200 bg-white shadow-sm overflow-x-auto">
           {isTimesheet ? <>
-            <StundenOverviewPage schedule={schedule} dates={previewDates ?? datesOfMonth(schedule.year, schedule.month)} title={previewTitle} employeeIds={employeeIds} />
+            <StundenOverviewPage schedule={schedule} dates={dates} title={previewTitle} employeeIds={employeeIds} />
             {chosenEmployees.map(employee => <StundenzettelPage key={employee.id} schedule={schedule} employee={employee}
-              dates={previewDates} periodLabel={previewTitle} />)}
-          </> : previewRange &&
-            <SchedulePrintPage schedule={schedule} dates={previewRange.dates} title={previewRange.title}
-              layout={previewRange.layout} employeeIds={previewRange.employeeIds} />}
+              dates={dates} periodLabel={previewTitle} />)}
+          </> : <SchedulePrintPage schedule={schedule} dates={dates} title={previewTitle}
+              layout="byDate" employeeIds={employeeIds} />}
         </div>
       </div>
 
-      {/* Vùng in ẩn: hoặc các tờ chấm công, hoặc lịch làm việc */}
-      <div className="print-area">
-        {scheduleRange ? (
-          <SchedulePrintPage
-            schedule={schedule}
-            dates={scheduleRange.dates}
-            title={scheduleRange.title}
-            layout={scheduleRange.layout}
-            employeeIds={scheduleRange.employeeIds}
-          />
-        ) : (
-          <>
-          {printList && <StundenOverviewPage schedule={schedule} dates={szDates ?? datesOfMonth(schedule.year, schedule.month)}
-            title={szLabel ?? monthLabel(schedule.year, schedule.month)} employeeIds={printList.map(e => e.id)} />}
-          {(printList ?? []).map((emp) => (
-            <StundenzettelPage
-              key={emp.id}
-              schedule={schedule}
-              employee={emp}
-              dates={szDates}
-              periodLabel={szLabel}
-            />
-          ))}
-          </>
-        )}
-      </div>
 
     </>
   );

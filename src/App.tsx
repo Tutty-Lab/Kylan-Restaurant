@@ -192,7 +192,7 @@ function MainApp({ onLogout }: { onLogout: () => void }) {
                 )),
               )}
             </select>
-            {/* „Tạo lịch" – wichtigste Aktion: öffnet im Tab Lịch die Urlaubs-Abfrage, dann wird erzeugt. */}
+            {/* „Tạo lịch" – wichtigste Aktion: erzeugt den Plan mit den gespeicherten Urlaubstagen. */}
             <button
               type="button"
               onClick={() => {

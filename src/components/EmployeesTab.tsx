@@ -124,7 +124,7 @@ export function EmployeesTab({ store }: { store: UseScheduleReturn }) {
       </div>
       <p className="text-xs text-slate-500 mb-4">
         Giờ nhập theo <b>tháng</b>. Bấm vào một người để sửa (hình thức, giờ, ngày làm trong
-        tuần, số ngày/tuần, nghỉ phép).
+        tuần, số ngày/tuần, nghỉ phép). Ngày nghỉ phép đã lưu sẽ tự được áp dụng khi tạo lịch.
       </p>
 
       {isLocked && (
@@ -245,7 +245,7 @@ function EmployeeSheet({
   onDelete?: () => void;
 }) {
   const [d, setD] = useState<Draft>(() => draftFrom(employee));
-  const [urlaubOffen, setUrlaubOffen] = useState(false);
+  const [urlaubOffen, setUrlaubOffen] = useState(true);
   const [loeschFrage, setLoeschFrage] = useState(false);
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((prev) => ({ ...prev, [k]: v }));
