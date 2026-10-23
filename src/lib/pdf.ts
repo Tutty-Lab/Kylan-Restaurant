@@ -1,4 +1,3 @@
-import { hourOverview, OVERVIEW_NOTE } from "./hourOverview";
 // ============================================================================
 // PDF-Export – ECHTES Vektor-PDF (Text + Linien), nicht mehr als Screenshot.
 //
@@ -32,6 +31,7 @@ import { MONTH_NAMES_DE } from "./dateFormat";
 import { employmentLabelDe } from "./employment";
 import { publicHolidayNames, publicHolidays } from "./holidays";
 import { isDayClosed } from "./workHours";
+import { hourStatsFor } from "./surchargeHours";
 import { format } from "date-fns";
 
 /** Dateiname säubern: Umlaute/Akzente weg, nur unbedenkliche Zeichen behalten. */
@@ -201,7 +201,7 @@ function stundenzettelRowsFor(
   schedule: Schedule,
   employee: Employee,
   dates: string[],
-): { rows: DayRow[]; totalMinutes: number } {
+): { rows: DayRow[] } {
   const byDate = new Map<string, Shift[]>();
   for (const s of schedule.shifts) {
     if (s.employeeId !== employee.id) continue;
@@ -216,10 +216,8 @@ function stundenzettelRowsFor(
     schedule.dateOverrides.filter((o) => o.closed).map((o) => [o.date, o] as const),
   );
 
-  let totalMinutes = 0;
   const rows: DayRow[] = dates.map((d) => {
     const dienste = byDate.get(d) ?? [];
-    totalMinutes += dienste.reduce((a, s) => a + s.paidMinutes, 0);
     const wd = WEEKDAY_LABELS_DE[weekdayKeyOf(parseIsoDate(d))];
     const holiday = holidayNames.get(d);
     const closed = closedByDate.get(d);
@@ -248,7 +246,7 @@ function stundenzettelRowsFor(
     };
   });
 
-  return { rows, totalMinutes };
+  return { rows };
 }
 
 // Spalten des Stundenzettels: x-Position, Breite, Ausrichtung. Rechte Kante 196.
@@ -286,7 +284,6 @@ function drawStundenzettelTable(
   doc: jsPDF,
   startY: number,
   rows: DayRow[],
-  totalMinutes: number,
   maxBottom: number,
 ): void {
   const BASE_FS = 6.5; // Schriftgröße (pt)
@@ -413,12 +410,11 @@ function drawStundenzettelTable(
     y += h;
   });
 
-  // ---- Fußzeile (Gesamtstunden) ----
+  // ---- Fußzeile (Gesamtstunden – leer, der Betrieb trägt von Hand ein) ----
   const footTop = y;
   doc.setFillColor(...HEAD_FILL);
   doc.rect(SZ_LEFT, y, SZ_RIGHT - SZ_LEFT, footH, "F");
   drawCellText("Gesamtstunden", 0, grundlinie(y + footH / 2), "bold", INK);
-  drawCellText(minutesToDecimalHours(totalMinutes), 4, grundlinie(y + footH / 2), "bold", INK);
   y += footH;
   const tableBottom = y;
 
@@ -447,17 +443,16 @@ function drawStundenzettel(
       ["Beschäftigungsart", employmentLabelDe(employee.employmentType)],
       ["Mitarbeiter", employee.name],
       ["Monat", MONTH_NAMES_DE[schedule.month - 1]],
-      ["Sollstunden", null], // von Hand einzutragen
       ["Jahr", String(schedule.year)],
     ],
     startY,
   );
 
-  const { rows, totalMinutes } = stundenzettelRowsFor(schedule, employee, dates);
+  const { rows } = stundenzettelRowsFor(schedule, employee, dates);
 
   // Unter der Tabelle liegen Summe (ab pageH − 30) und Unterschriften – die
   // Tabelle hört spätestens 5 mm darüber auf.
-  drawStundenzettelTable(doc, infoY, rows, totalMinutes, doc.internal.pageSize.getHeight() - 35);
+  drawStundenzettelTable(doc, infoY, rows, doc.internal.pageSize.getHeight() - 35);
 
   // Zusammenfassung + Unterschriften: FESTE Positionen im reservierten Band am
   // Seitenende – unabhängig davon, wo die Tabelle endet (keine Kollision mehr).
@@ -467,9 +462,10 @@ function drawStundenzettel(
   const col3 = (pageW - 2 * MARGIN) / 3;
 
   const summary: Array<[string, string | null]> = [
-    ["Gesamtstunden", `${minutesToDecimalHours(totalMinutes)} h`],
-    ["Sollstunden", null],
-    ["Differenz", null],
+    // Alles leer: der Betrieb gleicht mit der Übersicht (Seite 1) ab und trägt von Hand ein.
+    ["Gesamtstunden", null],
+    ["Nachtstunden (ab 20 Uhr)", null],
+    ["Sonntagsstunden", null],
   ];
   summary.forEach(([label, value], i) => {
     const x = MARGIN + i * col3;
@@ -496,25 +492,6 @@ function drawStundenzettel(
   );
 }
 
-/** Shared first page for both schedule and timesheet exports. */
-function drawHoursOverview(doc: jsPDF, schedule: Schedule, dates: string[], periodLabel: string, employeeIds?: string[]): void {
-  const overviewY = drawHeader(doc, "Stundenübersicht", schedule, periodLabel);
-  const overview = hourOverview(schedule, dates, employeeIds);
-  const hours = (n: number | null) => n === null ? "- *" : minutesToDecimalHours(n);
-  const total = overview.reduce((n, r) => n + r.total, 0);
-  const sunday = overview.reduce((n, r) => n + r.sunday, 0);
-  const night = overview.some(r => r.night === null) ? null : overview.reduce((n, r) => n + r.night!, 0);
-  const overviewW = doc.internal.pageSize.getWidth() - 2 * MARGIN;
-  const overviewEnd = drawGrid(doc, MARGIN, overviewY,
-    [0.37, 0.19, 0.25, 0.19].map((ratio, i) => ({ w: overviewW * ratio, align: i === 0 ? "left" as const : "right" as const })),
-    ["Mitarbeiter", "Gesamtstunden", "Nachtstunden\n(ab 20 Uhr)", "Sonntagsstunden"],
-    [...overview.map((r, i) => ({ cells: [[r.employee.name], [hours(r.total)], [hours(r.night)], [hours(r.sunday)]], shaded: i % 2 === 1 })),
-      { cells: [["Summe"], [hours(total)], [hours(night)], [hours(sunday)]], shaded: true, strong: true }], 9, 11);
-  doc.setFontSize(8);
-  doc.setTextColor(...MUTED);
-  doc.text(doc.splitTextToSize(T(OVERVIEW_NOTE), overviewW), MARGIN, overviewEnd + 7);
-}
-
 /**
  * Baut die Stundenzettel-PDF: eine A4-Seite je Mitarbeiter.
  * `dates` fehlt => ganzer Monat; `periodLabel` fehlt => Monat/Jahr.
@@ -529,19 +506,117 @@ export async function buildStundenzettelPdf(
   opts: { dates?: string[]; periodLabel?: string } = {},
   onProgress?: (current: number, total: number) => void,
 ): Promise<jsPDF> {
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-  const dates = opts.dates ?? datesOfMonth(schedule.year, schedule.month);
-  const periodLabel = opts.periodLabel ?? monthLabelDe(schedule.year, schedule.month);
+  return buildStundenzettelPdfFor([{ schedule, employees }], opts, onProgress);
+}
 
-  drawHoursOverview(doc, schedule, dates, periodLabel, employees.map(e => e.id));
-  for (let i = 0; i < employees.length; i++) {
-    doc.addPage();
-    drawStundenzettel(doc, schedule, employees[i], dates, periodLabel);
-    onProgress?.(i + 1, employees.length);
-    if (employees.length > 1) await new Promise((r) => setTimeout(r, 0));
+/** Eine Filiale mit den Mitarbeitern, die in die PDF sollen. */
+export type StundenzettelJob = { schedule: Schedule; employees: Employee[] };
+
+/**
+ * Stundenzettel-PDF über MEHRERE Filialen: alle Seiten landen in EINER Datei,
+ * in der Reihenfolge der Filialen. Der Betrieb druckt beide Läden zusammen aus,
+ * deshalb ist ein einziges Dokument richtig – nicht zwei Downloads.
+ */
+export async function buildStundenzettelPdfFor(
+  jobs: StundenzettelJob[],
+  opts: { dates?: string[]; periodLabel?: string } = {},
+  onProgress?: (current: number, total: number) => void,
+): Promise<jsPDF> {
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+  const total = jobs.reduce((sum, job) => sum + job.employees.length, 0);
+  let done = 0;
+
+  for (const job of jobs) {
+    const dates = opts.dates ?? datesOfMonth(job.schedule.year, job.schedule.month);
+    const periodLabel = opts.periodLabel ?? monthLabelDe(job.schedule.year, job.schedule.month);
+    if (job !== jobs[0]) doc.addPage();
+    drawUebersicht(doc, job.schedule, job.employees, dates, periodLabel);
+    for (const employee of job.employees) {
+      doc.addPage();
+      drawStundenzettel(doc, job.schedule, employee, dates, periodLabel);
+      // Zähler NICHT im optionalen Aufruf hochzählen: ohne onProgress würde
+      // onProgress?.(++done) gar nicht ausgewertet – dann lägen alle Seiten
+      // übereinander auf Seite 1.
+      done += 1;
+      onProgress?.(done, total);
+      if (total > 1) await new Promise((r) => setTimeout(r, 0));
+    }
   }
 
   return doc;
+}
+
+// ── Übersicht (Seite 1) ─────────────────────────────────────────────────────
+
+/**
+ * Seite 1 jeder PDF: je Mitarbeiter Gesamt-, Nacht- (ab 20 Uhr) und
+ * Sonntagsstunden – vom Programm berechnet. Die Einzelblätter danach lassen
+ * Nacht/Sonntag leer, damit der Betrieb selbst abgleicht.
+ */
+function drawUebersicht(
+  doc: jsPDF,
+  schedule: Schedule,
+  employees: Employee[],
+  dates: string[],
+  periodLabel: string,
+): void {
+  const pageW = doc.internal.pageSize.getWidth();
+  let y = drawHeader(doc, "Stundenübersicht", schedule, periodLabel) + 2;
+  const left = MARGIN;
+  const right = pageW - MARGIN;
+  const numW = 46;
+  const cols = [
+    { label: "Mitarbeiter", x: left, align: "left" as const },
+    { label: "Gesamtstunden", x: right - 2 * numW, align: "right" as const },
+    { label: "Nachtstunden (ab 20 Uhr)", x: right - numW, align: "right" as const },
+    { label: "Sonntagsstunden", x: right, align: "right" as const },
+  ];
+  const rowH = 6.5;
+  const line = (yy: number, color = DIVIDER, width = 0.2) => {
+    doc.setDrawColor(...color);
+    doc.setLineWidth(width);
+    doc.line(left, yy, right, yy);
+  };
+  const cell = (text: string, col: (typeof cols)[number], yy: number) =>
+    doc.text(T(text), col.align === "right" ? col.x - 1.5 : col.x + 1.5, yy, { align: col.align });
+
+  doc.setFillColor(...HEAD_FILL);
+  doc.rect(left, y, right - left, rowH, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...INK);
+  cols.forEach((col) => cell(col.label, col, y + 4.3));
+  y += rowH;
+  line(y, LINE, 0.3);
+
+  const sum = { total: 0, night: 0, sunday: 0 };
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  for (const employee of employees) {
+    const stats = hourStatsFor(schedule.shifts, employee.id, dates);
+    sum.total += stats.total;
+    sum.night += stats.night;
+    sum.sunday += stats.sunday;
+    cell(employee.name, cols[0], y + 4.3);
+    cell(minutesToDecimalHours(stats.total), cols[1], y + 4.3);
+    cell(minutesToDecimalHours(stats.night), cols[2], y + 4.3);
+    cell(minutesToDecimalHours(stats.sunday), cols[3], y + 4.3);
+    y += rowH;
+    line(y);
+  }
+  line(y, LINE, 0.3);
+  doc.setFont("helvetica", "bold");
+  cell("Summe", cols[0], y + 4.3);
+  cell(minutesToDecimalHours(sum.total), cols[1], y + 4.3);
+  cell(minutesToDecimalHours(sum.night), cols[2], y + 4.3);
+  cell(minutesToDecimalHours(sum.sunday), cols[3], y + 4.3);
+  y += rowH + 4;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUTED);
+  const note = "Nachtstunden: bezahlte Arbeitszeit ab 20:00 Uhr (ohne Pause), ohne Sonntage. Sonntagsstunden: gesamte bezahlte Arbeitszeit an Sonntagen (nicht doppelt als Nacht gezählt). Angaben in Stunden.";
+  doc.text(doc.splitTextToSize(T(note), right - left), left, y);
 }
 
 // ── Datei ausliefern ─────────────────────────────────────────────────────────
@@ -575,14 +650,6 @@ export function deliver(blob: Blob, filename: string): void {
 /** jsPDF-Dokument als Datei speichern. */
 export function savePdf(doc: jsPDF, filename: string): void {
   deliver(doc.output("blob"), filename);
-}
-
-/** Print the PDF itself so browser webpage headers never reach the paper. */
-export function openPrintPdf(doc: jsPDF, target: Window): void {
-  doc.autoPrint();
-  const url = URL.createObjectURL(doc.output("blob"));
-  target.location.replace(url);
-  setTimeout(() => URL.revokeObjectURL(url), 300_000);
 }
 
 // ── Dienstplan (Lịch làm việc, zum Aushang im Laden) ────────────────────────
@@ -708,10 +775,53 @@ export function buildDienstplanPdf(
   schedule: Schedule,
   opts: { dates: string[]; title: string; layout: SchedulePdfLayout; employeeIds?: string[] },
 ): jsPDF {
-  const employees =
-    opts.employeeIds && opts.employeeIds.length
-      ? schedule.employees.filter((e) => opts.employeeIds!.includes(e.id))
-      : schedule.employees;
+  return buildDienstplanPdfFor([{ schedule, ...opts }], opts.layout);
+}
+
+/** Eine Filiale mit dem Zeitraum, der auf ihre Dienstplan-Seite soll. */
+export type DienstplanJob = {
+  schedule: Schedule;
+  dates: string[];
+  title: string;
+  employeeIds?: string[];
+};
+
+/** Dienstplan-PDF über MEHRERE Filialen: je Filiale eine Seite, eine Datei. */
+export function buildDienstplanPdfFor(jobs: DienstplanJob[], layout: SchedulePdfLayout): jsPDF {
+  const doc = newDienstplanDoc(layout);
+  jobs.forEach((job, index) => {
+    if (index > 0) doc.addPage();
+    drawUebersicht(doc, job.schedule, dienstplanEmployees(job.schedule, job.employeeIds), job.dates, job.title);
+    doc.addPage();
+    drawDienstplan(doc, job.schedule, { ...job, layout });
+  });
+  return doc;
+}
+
+/** Leeres Dokument im passenden Format: der Monat liegt quer, die Woche hoch. */
+function newDienstplanDoc(layout: SchedulePdfLayout): jsPDF {
+  return new jsPDF({
+    unit: "mm",
+    format: "a4",
+    orientation: layout === "byDate" ? "landscape" : "portrait",
+    compress: true,
+  });
+}
+
+/** Wer auf den Dienstplan kommt: die Auswahl, sonst alle. */
+function dienstplanEmployees(schedule: Schedule, employeeIds?: string[]): Employee[] {
+  return employeeIds && employeeIds.length
+    ? schedule.employees.filter((e) => employeeIds.includes(e.id))
+    : schedule.employees;
+}
+
+/** Zeichnet EINEN Dienstplan auf die aktuelle Seite. */
+function drawDienstplan(
+  doc: jsPDF,
+  schedule: Schedule,
+  opts: { dates: string[]; title: string; layout: SchedulePdfLayout; employeeIds?: string[] },
+): void {
+  const employees = dienstplanEmployees(schedule, opts.employeeIds);
   // Eine LISTE je Person und Tag – an geteilten Tagen sind es zwei Dienste.
   const byKey = new Map<string, Shift[]>();
   for (const s of schedule.shifts) {
@@ -724,15 +834,6 @@ export function buildDienstplanPdf(
   const overrides = Object.fromEntries(schedule.dateOverrides.map((o) => [o.date, o]));
   const closedOn = (date: string) => isDayClosed(schedule.workHours, date, holidays, overrides);
 
-  const landscape = opts.layout === "byDate";
-  const doc = new jsPDF({
-    unit: "mm",
-    format: "a4",
-    orientation: landscape ? "landscape" : "portrait",
-    compress: true,
-  });
-  drawHoursOverview(doc, schedule, opts.dates, opts.title, opts.employeeIds);
-  doc.addPage();
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const startY = drawHeader(doc, "Dienstplan", schedule, opts.title);
@@ -799,7 +900,7 @@ export function buildDienstplanPdf(
         shaded: closed,
         cells: [
           [format(parseIsoDate(d), "dd.MM.yyyy")],
-          [WEEKDAY_LABELS_DE[weekdayKeyOf(parseIsoDate(d))] + (holiday ? ` · ${holiday}` : "")],
+          [WEEKDAY_LABELS_DE[weekdayKeyOf(parseIsoDate(d))], ...(holiday ? ["Feiertag"] : [])],
           ...employees.map((e) => shiftLines(byKey.get(`${e.id}#${d}`) ?? [], closed)),
         ],
       };
@@ -810,5 +911,32 @@ export function buildDienstplanPdf(
   }
 
   drawSignatures(doc, ["Unterschrift Arbeitgeber", "Datum"], pageH - 14);
-  return doc;
+}
+
+export type ShareResult = "shared" | "cancelled" | "unsupported" | "failed";
+
+/**
+ * Bảng Chia sẻ của hệ thống („Lưu vào Tệp", gửi qua Zalo …) cho trình duyệt nhúng.
+ * Phải gọi TRỰC TIẾP trong lúc người dùng bấm nút: tạo PDF mất vài giây, gọi
+ * share sau đó thì trình duyệt coi như không có thao tác người dùng và từ chối.
+ */
+export async function sharePdf(blob: Blob, filename: string): Promise<ShareResult> {
+  if (typeof navigator === "undefined" || typeof File === "undefined") return "unsupported";
+  const file = new File([blob], filename, { type: "application/pdf" });
+  if (!navigator.canShare?.({ files: [file] })) return "unsupported";
+  try {
+    await navigator.share({ files: [file], title: filename });
+    return "shared";
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") return "cancelled";
+    return "failed";
+  }
+}
+
+/** Print the PDF itself so browser webpage headers never reach the paper. */
+export function openPrintPdf(doc: jsPDF, target: Window): void {
+  doc.autoPrint();
+  const url = URL.createObjectURL(doc.output("blob"));
+  target.location.replace(url);
+  setTimeout(() => URL.revokeObjectURL(url), 300_000);
 }

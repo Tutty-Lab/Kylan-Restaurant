@@ -19,8 +19,8 @@ describe("schedule overview", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({total:360,sunday:180,night:120});
   });
-  it("does not invent pause placement", () => {
-    expect(hourOverview(schedule,["2026-10-24"],[employee.id])[0]).toMatchObject({total:150,night:null});
+  it("uses the Khang Ngon calculation when pause placement is absent", () => {
+    expect(hourOverview(schedule,["2026-10-24"],[employee.id])[0]).toMatchObject({total:150,night:120});
   });
   it("puts overview first for monthly and weekly timesheets, respecting selected employees", async () => {
     for (const dates of [undefined, ["2026-10-23"]]) {

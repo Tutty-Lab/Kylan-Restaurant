@@ -101,6 +101,8 @@ export type Shift = {
   startMinutes: number;
   endMinutes: number;
   pauseMinutes: number;
+  /** Optional exact break start, used by the shared Khang Ngon PDF calculation. */
+  pauseStartMinutes?: number;
   /** Bezahlte Arbeitszeit in Minuten = presence - pause. */
   paidMinutes: number;
   shiftType: ShiftType;
