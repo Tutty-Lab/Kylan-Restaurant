@@ -1,5 +1,6 @@
+import { savePdfFile } from "../lib/savePdfFile";
 import { StundenOverviewPage } from "./StundenOverviewPage";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import type { UseScheduleReturn } from "../hooks/useSchedule";
 import type { Employee } from "../types";
@@ -40,12 +41,30 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
   const [scheduleRange, setScheduleRange] = useState<ScheduleRange | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<string>("");
-  const [readyPdf, setReadyPdf] = useState<{ filename: string; url: string } | null>(null);
+  const [readyPdf, setReadyPdf] = useState<{ filename: string; blob: Blob } | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
-  useEffect(() => () => { if (readyPdf) URL.revokeObjectURL(readyPdf.url); }, [readyPdf]);
+  const [savingPdf, setSavingPdf] = useState(false);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
 
   function finishPdf(doc: Awaited<ReturnType<typeof buildStundenzettelPdf>>, filename: string) {
-    setReadyPdf({ filename, url: URL.createObjectURL(doc.output("blob")) });
+    setReadyPdf({ filename, blob: doc.output("blob") });
+    setSaveNote(null);
+  }
+
+  async function onSavePdf() {
+    if (!readyPdf || savingPdf) return;
+    setSavingPdf(true);
+    setPdfError(null);
+    setSaveNote(null);
+    try {
+      const result = await savePdfFile(readyPdf.blob, readyPdf.filename);
+      if (result === "saved") setSaveNote("Đã lưu PDF.");
+      else if (result === "download") setSaveNote("Đã gửi yêu cầu tải file xuống trình duyệt.");
+    } catch (error) {
+      setPdfError(`Không lưu được PDF: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSavingPdf(false);
+    }
   }
 
   // Zeitraum für den Stundenzettel-Ausdruck: gesetzt => Wochen-Zettel (nur diese
@@ -362,8 +381,9 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
             <div><p className="text-sm font-semibold">PDF đã sẵn sàng</p><p className="mt-1 break-all text-xs">{readyPdf.filename}</p></div>
             <button type="button" aria-label="Đóng PDF đã sẵn sàng" onClick={() => setReadyPdf(null)} className="text-sm underline">Đóng</button>
           </div>
+          {saveNote && <p className="mt-2 text-xs">{saveNote}</p>}
           <div className="mt-3 flex gap-2 text-sm">
-            <a href={readyPdf.url} download={readyPdf.filename} className="rounded-lg bg-emerald-700 px-4 py-2 font-medium text-white">Lưu</a>
+            <button type="button" onClick={() => void onSavePdf()} disabled={savingPdf} className="rounded-lg bg-emerald-700 px-4 py-2 font-medium text-white disabled:opacity-50">{savingPdf ? "Đang lưu…" : "Lưu"}</button>
           </div>
         </div>}
 
