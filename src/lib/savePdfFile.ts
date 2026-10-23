@@ -8,7 +8,20 @@ type SaveWindow = Window & {
   }) => Promise<SaveHandle>;
 };
 
-export async function savePdfFile(blob: Blob, filename: string): Promise<"saved" | "cancelled" | "download"> {
+export async function savePdfFile(blob: Blob, filename: string): Promise<"shared" | "saved" | "cancelled" | "download"> {
+  // Call directly from Lưu: Safari requires a fresh user gesture for its share sheet.
+  if (typeof navigator !== "undefined" && typeof File !== "undefined" && navigator.share) {
+    const file = new File([blob], filename, { type: "application/pdf" });
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: filename });
+        return "shared";
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return "cancelled";
+        throw error;
+      }
+    }
+  }
   const host = window as SaveWindow;
   if (host.showSaveFilePicker) {
     try {

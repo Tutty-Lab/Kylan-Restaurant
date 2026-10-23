@@ -58,7 +58,8 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
     setSaveNote(null);
     try {
       const result = await savePdfFile(readyPdf.blob, readyPdf.filename);
-      if (result === "saved") setSaveNote("Đã lưu PDF.");
+      if (result === "shared") setSaveNote("Đã hoàn tất lưu / chia sẻ PDF.");
+      else if (result === "saved") setSaveNote("Đã lưu PDF.");
       else if (result === "download") setSaveNote("Đã gửi yêu cầu tải file xuống trình duyệt.");
     } catch (error) {
       setPdfError(`Không lưu được PDF: ${error instanceof Error ? error.message : String(error)}`);

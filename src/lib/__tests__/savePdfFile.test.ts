@@ -4,6 +4,24 @@ import { savePdfFile } from "../savePdfFile";
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("save PDF to disk", () => {
+  it("prefers the native share sheet over the save picker", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    const picker = vi.fn();
+    vi.stubGlobal("navigator", { canShare: () => true, share });
+    vi.stubGlobal("window", { showSaveFilePicker: picker });
+    expect(await savePdfFile(new Blob(["%PDF-1.7"]), "Kylan.pdf")).toBe("shared");
+    const file = share.mock.calls[0][0].files[0] as File;
+    expect(file.name).toBe("Kylan.pdf");
+    expect(file.type).toBe("application/pdf");
+    expect(picker).not.toHaveBeenCalled();
+  });
+  it("cancelling sharing never opens a save picker", async () => {
+    const picker = vi.fn();
+    vi.stubGlobal("navigator", { canShare: () => true, share: vi.fn().mockRejectedValue(new DOMException("Cancelled", "AbortError")) });
+    vi.stubGlobal("window", { showSaveFilePicker: picker });
+    expect(await savePdfFile(new Blob(), "Kylan.pdf")).toBe("cancelled");
+    expect(picker).not.toHaveBeenCalled();
+  });
   it("writes the PDF to the chosen file without navigation or download links", async () => {
     const write = vi.fn().mockResolvedValue(undefined);
     const close = vi.fn().mockResolvedValue(undefined);
