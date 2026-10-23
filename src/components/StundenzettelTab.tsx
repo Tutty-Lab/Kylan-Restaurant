@@ -1,11 +1,11 @@
 import { StundenOverviewPage } from "./StundenOverviewPage";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import type { UseScheduleReturn } from "../hooks/useSchedule";
 import type { Employee } from "../types";
 import { StundenzettelPage } from "./StundenzettelPage";
 import { SchedulePrintPage, type SchedulePrintLayout } from "./SchedulePrintPage";
-import { buildDienstplanPdf, buildStundenzettelPdf, savePdf, safeFileName, openPrintPdf } from "../lib/pdf";
+import { buildDienstplanPdf, buildStundenzettelPdf, savePdf, safeFileName, openPrintPdf, sharePdf } from "../lib/pdf";
 import { weeksOfMonth } from "../lib/weeks";
 import { datesOfMonth } from "../lib/demand";
 import { monthLabel } from "../lib/shiftOps";
@@ -40,6 +40,24 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
   const [scheduleRange, setScheduleRange] = useState<ScheduleRange | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<string>("");
+  const [readyPdf, setReadyPdf] = useState<{ blob: Blob; filename: string; url: string } | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  useEffect(() => () => { if (readyPdf) URL.revokeObjectURL(readyPdf.url); }, [readyPdf]);
+
+  function finishPdf(doc: Parameters<typeof savePdf>[0], filename: string) {
+    const blob = doc.output("blob");
+    setReadyPdf({ blob, filename, url: URL.createObjectURL(blob) });
+    savePdf(doc, filename);
+  }
+
+  async function onSharePdf() {
+    if (!readyPdf) return;
+    const result = await sharePdf(readyPdf.blob, readyPdf.filename);
+    if (result === "shared") setShareNote("Đã chia sẻ PDF.");
+    else if (result !== "cancelled") setShareNote("Trình duyệt này chưa hỗ trợ chia sẻ file. Dùng Tải PDF hoặc Mở PDF; nếu vẫn bị chặn, mở ứng dụng bằng Chrome/Safari.");
+  }
+
 
   // Zeitraum für den Stundenzettel-Ausdruck: gesetzt => Wochen-Zettel (nur diese
   // Tage), leer => ganzer Monat.
@@ -125,6 +143,9 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
   ) {
     if (list.length === 0 || pdfBusy) return;
     setPdfBusy(true);
+    setPdfError(null);
+    setReadyPdf(null);
+    setShareNote(null);
     setPdfProgress(list.length > 1 ? `1/${list.length}` : "");
     // Kurzer Yield, damit „Đang tạo PDF…" zuerst sichtbar wird.
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -137,9 +158,9 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
           if (total > 1) setPdfProgress(`${current}/${total}`);
         },
       );
-      savePdf(doc, filename);
+      finishPdf(doc, filename);
     } catch (err) {
-      alert(`Không tạo được PDF: ${err instanceof Error ? err.message : String(err)}`);
+      setPdfError(`Không tạo được PDF: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setPdfBusy(false);
       setPdfProgress("");
@@ -152,6 +173,9 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
    */
   function doPdfSchedule(range: ScheduleRange, filename: string) {
     if (range.dates.length === 0 || pdfBusy) return;
+    setPdfError(null);
+    setReadyPdf(null);
+    setShareNote(null);
     try {
       const doc = buildDienstplanPdf(schedule, {
         dates: range.dates,
@@ -159,10 +183,10 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
         layout: range.layout,
         employeeIds: range.employeeIds,
       });
-      savePdf(doc, filename);
+      finishPdf(doc, filename);
       if (range.weekStart) markWeekPrinted(range.weekStart);
     } catch (err) {
-      alert(`Không tạo được PDF: ${err instanceof Error ? err.message : String(err)}`);
+      setPdfError(`Không tạo được PDF: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -344,6 +368,21 @@ export function StundenzettelTab({ store }: { store: UseScheduleReturn }) {
             </div>
           )}
         </div>
+
+        {pdfError && <div role="alert" className="mb-3 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-900">{pdfError}</div>}
+        {readyPdf && <div role="status" className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-950">
+          <div className="flex items-start justify-between gap-3">
+            <div><p className="text-sm font-semibold">PDF đã sẵn sàng</p><p className="mt-1 break-all text-xs">{readyPdf.filename}</p></div>
+            <button type="button" aria-label="Đóng PDF đã sẵn sàng" onClick={() => setReadyPdf(null)} className="text-sm underline">Đóng</button>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-sm">
+            <a href={readyPdf.url} download={readyPdf.filename} className="rounded-lg bg-emerald-700 px-3 py-2 font-medium text-white">Tải PDF</a>
+            <a href={readyPdf.url} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-emerald-300 bg-white px-3 py-2">Mở PDF</a>
+            <button type="button" onClick={() => void onSharePdf()} className="rounded-lg border border-emerald-300 bg-white px-3 py-2">Lưu / Chia sẻ</button>
+          </div>
+          <p className="mt-2 text-xs">Nếu file chưa tải xuống, bấm Tải PDF hoặc Mở PDF để lưu từ trình xem.</p>
+          {shareNote && <p className="mt-2 text-xs">{shareNote}</p>}
+        </div>}
 
         <div className="mb-2 text-xs text-slate-500">
           Xem trước {isTimesheet ? "bảng chấm công" : "lịch làm việc"} · {previewTitle}
